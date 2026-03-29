@@ -22,7 +22,7 @@ Verwaltet Server, Backup-Quellen, Methoden, Ziele und Jobs – mit interaktivem 
 |------------|-------------|
 | Frontend | Vanilla HTML/JS + vis-network.js |
 | Backend | FastAPI (Python 3.12) |
-| Datenbank | PostgreSQL 16 (optional) |
+| Speicher | JSON-Dateien (lokales Dateisystem) |
 | Web-Server | nginx |
 | Deployment | Docker Compose |
 
@@ -58,15 +58,13 @@ BackupDocu ist jetzt rein JSON-basiert:
 
 ## CI/CD
 
-GitHub Actions testet automatisch beide Speichermodi:
+GitHub Actions testet automatisch den JSON-Speichermodus:
 
 - **JSON-Modus:** CRUD-Operationen ohne Datenbank
-- **DB-Modus:** PostgreSQL-Integration mit vollem CRUD
 
 ```bash
 # Lokaler Test
-STORAGE_MODE=json uvicorn backend.main:app --reload
-STORAGE_MODE=db uvicorn backend.main:app --reload
+uvicorn backend.main:app --reload
 ```
 
 ## Datenmodell
