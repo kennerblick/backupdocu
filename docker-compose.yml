@@ -17,9 +17,12 @@ services:
     restart: unless-stopped
     ports:
       - "${NGINX_PORT:-8080}:80"
+      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./frontend:/usr/share/nginx/html:ro
+      - /opt/docker/backupdocu/letsencrypt:/etc/letsencrypt:ro
+      - /opt/docker/backupdocu/certbot:/var/www/certbot:ro
     depends_on:
       - backend
 

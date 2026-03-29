@@ -56,7 +56,36 @@ Danach erreichbar unter: `http://<server-ip>:8080`
 
 API-Dokumentation: `http://<server-ip>:8080/docs`
 
-## Speichermodus
+## HTTPS/SSL Setup
+
+BackupDocu unterstützt HTTPS mit minimalem Aufwand:
+
+### Option 1: Let's Encrypt (Produktion)
+```bash
+# Für eine Domain (z.B. backupdocu.example.com)
+chmod +x setup-https.sh
+./setup-https.sh backupdocu.example.com
+```
+
+Das Script:
+- Verlangt automatisch ein kostenloses Zertifikat von Let's Encrypt
+- Configured nginx für HTTPS
+- Container automatisch mit SSL neu starten
+- Zertifikat auto-erneuert sich
+
+### Option 2: Self-Signed (Tests/Intern)
+```bash
+./setup-https.sh localhost
+```
+
+Erstellt ein selbstsigniertes Zertifikat (schnell, aber Browser-Warnung).
+
+### Manuell
+nginx lädt Zertifikate von:
+- `/opt/docker/backupdocu/letsencrypt/live/backupdocu/fullchain.pem`
+- `/opt/docker/backupdocu/letsencrypt/live/backupdocu/privkey.pem`
+
+Kopiere deine Zertifikate dorthin, nginx lädt sie automatisch beim Neustart.
 
 BackupDocu ist jetzt rein JSON-basiert:
 
