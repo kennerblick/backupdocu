@@ -13,7 +13,7 @@ Verwaltet Server, Backup-Quellen, Methoden, Ziele und Jobs – mit interaktivem 
 - **Flow-Diagramm** – interaktive Visualisierung aller Backup-Pfade
 - **Tape & Offsite** – visuell hervorgehoben (orange / cyan)
 - **GFS-Policy** – konfigurierbar pro Job
-- **Speicheroptionen** – JSON-Dateien (default) oder PostgreSQL-Datenbank
+- **Speicheroptionen** – Dateibasiert (JSON, separate Dateien je Collection)
 - **Export/Import** – komplette Konfiguration als JSON
 
 ## Stack
@@ -42,20 +42,19 @@ API-Dokumentation: `http://<server-ip>:8080/docs`
 
 ## Speichermodus
 
-BackupDocu unterstützt zwei Speichermodi:
+BackupDocu ist jetzt rein JSON-basiert:
 
-### JSON-Modus (Default)
-- Speichert alle Daten in `backend/storage.json`
-- Keine Datenbank-Abhängigkeit
-- Ideal für kleine Setups oder Tests
-- Automatische Datei-Erstellung
+- Separate JSON-Dateien im Verzeichnis `backend/data`:
+  - `servers.json`
+  - `sources.json`
+  - `methods.json`
+  - `targets.json`
+  - `jobs.json`
+- Keine Datenbank (PostgreSQL) mehr nötig
+- Einfaches Backup/Kopie der Dateien
+- Bestehende Strukturen aus der UI werden direkt in diese Dateien geschrieben
 
-### Datenbank-Modus
-- Verwendet PostgreSQL für persistente Speicherung
-- Mehrere Benutzer / Skalierbarkeit
-- Setze `STORAGE_MODE=db` in `.env`
-
-**Modus-Wechsel:** In der Web-UI über "Speichermodus" Dropdown umschalten.
+**Hinweis:** Der zeitliche Rhythmus (`schedule`), Komprimierung (`is_compressed`) und Verschlüsselung (`is_encrypted`) sind Teil des `jobs`-Objekts.
 
 ## CI/CD
 

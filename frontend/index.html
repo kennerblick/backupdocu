@@ -112,13 +112,6 @@ textarea { resize: vertical; min-height: 60px; }
     <button class="nav-tab active" onclick="switchView('topology')">🗺 Topologie</button>
     <button class="nav-tab" onclick="switchView('table')">📋 Tabellen</button>
   </div>
-  <div style="margin-left: 16px; display: flex; gap: 8px; align-items: center;">
-    <label style="font-size:12px;color:var(--text2);">Speichermodus</label>
-    <select id="storage-mode" onchange="setStorageMode(this.value)" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px;">
-      <option value="json">JSON (default)</option>
-      <option value="db">Datenbank</option>
-    </select>
-  </div>
   <div style="margin-left: 16px; display: flex; gap: 8px;">
     <button class="btn btn-primary btn-sm" onclick="exportJSON()">📤 Export JSON</button>
     <button class="btn btn-primary btn-sm" onclick="document.getElementById('json-import').click()">📥 Import JSON</button>
@@ -233,7 +226,6 @@ textarea { resize: vertical; min-height: 60px; }
 
 <script>
 const API = '/api';
-let storageMode = 'json';
 let data = { servers: [], sources: [], methods: [], targets: [], jobs: [] };
 let network = null;
 let editId = null;
@@ -249,9 +241,6 @@ async function init() {
 }
 
 async function loadAll() {
-  const cfg = await fetch(`${API}/config/storage`).then(r => r.json());
-  storageMode = cfg.mode || 'json';
-  document.getElementById('storage-mode').value = storageMode;
   const [servers, sources, methods, targets, jobs, stats] = await Promise.all([
     fetch(`${API}/servers`).then(r => r.json()),
     fetch(`${API}/sources`).then(r => r.json()),
@@ -261,26 +250,6 @@ async function loadAll() {
     fetch(`${API}/stats`).then(r => r.json()),
   ]);
   data = { servers, sources, methods, targets, jobs, stats };
-}
-
-async function setStorageMode(mode) {
-  const resp = await fetch(`${API}/config/storage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(mode),
-  });
-  if (!resp.ok) {
-    toast('Speichermodus konnte nicht gesetzt werden', true);
-    return;
-  }
-  const cfg = await resp.json();
-  storageMode = cfg.mode;
-  document.getElementById('storage-mode').value = storageMode;
-  toast(`Speichermodus gesetzt: ${storageMode}`);
-  await loadAll();
-  renderStats();
-  renderTables();
-  network = null;
 }
 
 // ─── Stats ───────────────────────────────────────────────────────────────────
