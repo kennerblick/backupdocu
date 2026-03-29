@@ -45,14 +45,58 @@ else
     echo "✅ Let's Encrypt Zertifikat erhalten."
 fi
 
-# Verzeichnisrechte
-chmod -R 755 ./letsencrypt
-chmod -R 755 ./certbot
+# Erstelle HTTPS-Konfigurationsdatei
+cat > "$INSTALL_DIR/nginx/https.conf" << 'EOF'
+server {
+    listen 443 http2 ssl;
+    listen [::]:443 http2 ssl;
+    server_name _;
 
-echo "🔄 Starte Docker Container mit HTTPS neu..."
-docker compose down
-docker compose up -d
+    ssl_certificate /etc/letsencrypt/live/backupdocu/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/backupdocu/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
 
-echo "✅ HTTPS/SSL Setup abgeschlossen!"
-echo "🌐 Erreichbar unter: https://$DOMAIN"
-echo "⚠️ Bei Self-Signed Cert: Browser-Warnung akzeptieren (sicher, aber nicht öffentlich)"
+    location / {
+        root /usr/share/nginx/html;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://backend:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 60s;
+    }
+
+    location /docs {
+        proxy_pass http://backend:8000/docs;
+        proxy_set_header Host $host;
+    }
+
+    location /openapi.json {
+        proxy_pass http://backend:8000/openapi.json;
+    }
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+}
+EOF
+
+cat > "$INSTALL_DIR/nginx/http-redirect.conf" << 'EOF'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+    
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+EOF
+
+echo "✅ HTTPS-Konfigurationsdateien erstellt."
