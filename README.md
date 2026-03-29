@@ -28,6 +28,22 @@ Verwaltet Server, Backup-Quellen, Methoden, Ziele und Jobs – mit interaktivem 
 
 ## Schnellstart
 
+### Automatische Installation
+
+Für eine vollständige Installation von Grund auf (inkl. Docker/Git-Prüfung und -Installation):
+
+**Linux (Bash):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/kennerblick/backupdocu/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/kennerblick/backupdocu/main/install.ps1 -OutFile install.ps1; .\install.ps1
+```
+
+### Manuell
+
 ```bash
 git clone https://github.com/<dein-user>/backupdocu.git
 cd backupdocu
