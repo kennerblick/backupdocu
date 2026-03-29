@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BackupDocu – Backup Topologie</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/standalone/umd/vis-network.min.js"></script>
+<style>
+:root {
+  --bg: #0f1117; --bg2: #1a1d27; --bg3: #242736; --border: #2e3347;
+  --text: #e2e5f0; --text2: #8b92a8; --accent: #4f8ef7;
+  --green: #22c55e; --yellow: #f59e0b; --red: #ef4444; --purple: #a855f7;
+  --tape: #f97316; --offsite: #06b6d4;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; }
+
+/* Layout */
+.app { display: grid; grid-template-rows: 56px 1fr; height: 100vh; }
+header { background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 16px; }
+header h1 { font-size: 18px; font-weight: 700; color: var(--accent); }
+header h1 span { color: var(--text2); font-weight: 400; }
+.nav-tabs { display: flex; gap: 4px; margin-left: auto; }
+.nav-tab { padding: 6px 14px; border-radius: 6px; cursor: pointer; color: var(--text2); border: none; background: none; font-size: 13px; transition: all .15s; }
+.nav-tab:hover { background: var(--bg3); color: var(--text); }
+.nav-tab.active { background: var(--accent); color: #fff; }
+
+main { overflow: hidden; display: flex; flex-direction: column; }
+
+/* Stats Bar */
+.stats-bar { background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; gap: 24px; padding: 10px 20px; flex-shrink: 0; }
+.stat { display: flex; flex-direction: column; }
+.stat-val { font-size: 22px; font-weight: 700; color: var(--accent); line-height: 1; }
+.stat-lbl { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+/* Views */
+.view { display: none; flex: 1; overflow: hidden; }
+.view.active { display: flex; }
+
+/* Topology View */
+#view-topology { flex-direction: row; }
+#network-container { flex: 1; background: var(--bg); }
+.topo-legend { width: 220px; background: var(--bg2); border-left: 1px solid var(--border); padding: 16px; overflow-y: auto; flex-shrink: 0; }
+.topo-legend h3 { font-size: 12px; text-transform: uppercase; color: var(--text2); letter-spacing: .08em; margin-bottom: 12px; }
+.legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
+.legend-dot { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+
+/* Table View */
+#view-table { flex-direction: column; overflow-y: auto; padding: 20px; gap: 24px; }
+.section { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.section-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--bg3); border-bottom: 1px solid var(--border); }
+.section-header h2 { font-size: 14px; font-weight: 600; }
+.btn { padding: 6px 12px; border-radius: 6px; border: none; cursor: pointer; font-size: 12px; font-weight: 500; transition: opacity .15s; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-danger { background: var(--red); color: #fff; }
+.btn-sm { padding: 3px 8px; font-size: 11px; }
+.btn:hover { opacity: .85; }
+table { width: 100%; border-collapse: collapse; }
+th { padding: 8px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text2); background: var(--bg3); border-bottom: 1px solid var(--border); }
+td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--bg3); }
+
+/* Badges */
+.badge { display: inline-block; padding: 2px 7px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.badge-server { background: #1e3a5f; color: #60a5fa; }
+.badge-vm { background: #3b1f5e; color: #c084fc; }
+.badge-db { background: #1a3a2a; color: #4ade80; }
+.badge-share { background: #3a2a10; color: #fbbf24; }
+.badge-config { background: #1f2a3a; color: #93c5fd; }
+.badge-tape { background: #3a200a; color: var(--tape); }
+.badge-offsite { background: #0a2a3a; color: var(--offsite); }
+.badge-active { background: #1a3a2a; color: var(--green); }
+.badge-paused { background: #3a3a1a; color: var(--yellow); }
+.badge-disabled { background: #3a1a1a; color: var(--red); }
+
+.tier-icons { display: flex; gap: 4px; }
+.tier-icon { width: 20px; height: 20px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+.tier-primary { background: #1e3a5f; }
+.tier-tape { background: #3a200a; }
+.tier-offsite { background: #0a2a3a; }
+
+/* Modal */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 1000; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 24px; width: 560px; max-height: 85vh; overflow-y: auto; }
+.modal h3 { font-size: 16px; margin-bottom: 20px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-full { grid-column: 1/-1; }
+label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+input, select, textarea { width: 100%; background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+textarea { resize: vertical; min-height: 60px; }
+.modal-actions { display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end; }
+.btn-cancel { background: var(--bg3); color: var(--text2); }
+
+/* Toast */
+.toast { position: fixed; bottom: 24px; right: 24px; background: var(--green); color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 13px; z-index: 2000; opacity: 0; transition: opacity .3s; pointer-events: none; }
+.toast.error { background: var(--red); }
+.toast.show { opacity: 1; }
+
+.text-muted { color: var(--text2); font-size: 12px; }
+.font-mono { font-family: 'Consolas', monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <h1>Backup<span>Docu</span></h1>
+  <div class="stats-bar" id="stats-bar"></div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="switchView('topology')">🗺 Topologie</button>
+    <button class="nav-tab" onclick="switchView('table')">📋 Tabellen</button>
+  </div>
+  <div style="margin-left: 16px; display: flex; gap: 8px; align-items: center;">
+    <label style="font-size:12px;color:var(--text2);">Speichermodus</label>
+    <select id="storage-mode" onchange="setStorageMode(this.value)" style="background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px;">
+      <option value="json">JSON (default)</option>
+      <option value="db">Datenbank</option>
+    </select>
+  </div>
+  <div style="margin-left: 16px; display: flex; gap: 8px;">
+    <button class="btn btn-primary btn-sm" onclick="exportJSON()">📤 Export JSON</button>
+    <button class="btn btn-primary btn-sm" onclick="document.getElementById('json-import').click()">📥 Import JSON</button>
+    <input id="json-import" type="file" accept="application/json" style="display:none" onchange="importJSON(event)">
+  </div>
+</header>
+<main>
+  <!-- Topology View -->
+  <div class="view active" id="view-topology">
+    <div id="network-container"></div>
+    <div class="topo-legend">
+      <h3>Legende – Server</h3>
+      <div class="legend-item"><div class="legend-dot" style="background:#1e4080"></div>Physical Server</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#4a1a80"></div>Proxmox VM</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#1a4a1a"></div>Hyper-V VM</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#2a3a4a"></div>Container</div>
+      <br>
+      <h3>Legende – Quellen</h3>
+      <div class="legend-item"><div class="legend-dot" style="background:#1a3a6a"></div>Datenbank</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3a2a0a"></div>Share / Dateien</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#1a2a3a"></div>Konfiguration</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3a1a6a"></div>VM (Full)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#1a3a2a"></div>Kubernetes</div>
+      <br>
+      <h3>Legende – Ziele</h3>
+      <div class="legend-item"><div class="legend-dot" style="background:#1a3a4a"></div>NAS</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#4a2a0a"></div>Tape (LTO-9)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#0a3a4a"></div>Offsite rsync</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#2a1a4a"></div>Backup-Server</div>
+      <br>
+      <h3>Methoden</h3>
+      <div class="legend-item"><div class="legend-dot" style="background:#2a4a2a"></div>Veeam Agent</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3a4a1a"></div>Veeam B&R</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#1a2a4a"></div>rsync</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#4a3a1a"></div>Bash / pg_dump</div>
+    </div>
+  </div>
+
+  <!-- Table View -->
+  <div class="view" id="view-table">
+
+    <!-- Servers -->
+    <div class="section">
+      <div class="section-header">
+        <h2>🖥 Server</h2>
+        <button class="btn btn-primary" onclick="openModal('server')">+ Server</button>
+      </div>
+      <table>
+        <thead><tr><th>Name</th><th>Hostname</th><th>Typ</th><th>OS</th><th>Rolle</th><th>Notizen</th><th></th></tr></thead>
+        <tbody id="tbl-servers"></tbody>
+      </table>
+    </div>
+
+    <!-- Backup Sources -->
+    <div class="section">
+      <div class="section-header">
+        <h2>📦 Backup-Quellen</h2>
+        <button class="btn btn-primary" onclick="openModal('source')">+ Quelle</button>
+      </div>
+      <table>
+        <thead><tr><th>Server</th><th>Name</th><th>Typ</th><th>Pfad</th><th>Größe</th><th>Beschreibung</th><th></th></tr></thead>
+        <tbody id="tbl-sources"></tbody>
+      </table>
+    </div>
+
+    <!-- Backup Methods -->
+    <div class="section">
+      <div class="section-header">
+        <h2>⚙ Backup-Methoden</h2>
+        <button class="btn btn-primary" onclick="openModal('method')">+ Methode</button>
+      </div>
+      <table>
+        <thead><tr><th>Name</th><th>Typ</th><th>Beschreibung</th><th></th></tr></thead>
+        <tbody id="tbl-methods"></tbody>
+      </table>
+    </div>
+
+    <!-- Backup Targets -->
+    <div class="section">
+      <div class="section-header">
+        <h2>🗄 Backup-Ziele</h2>
+        <button class="btn btn-primary" onclick="openModal('target')">+ Ziel</button>
+      </div>
+      <table>
+        <thead><tr><th>Name</th><th>Typ</th><th>Host</th><th>Pfad</th><th>Kapazität</th><th>Beschreibung</th><th></th></tr></thead>
+        <tbody id="tbl-targets"></tbody>
+      </table>
+    </div>
+
+    <!-- Backup Jobs -->
+    <div class="section">
+      <div class="section-header">
+        <h2>🔄 Backup-Jobs</h2>
+        <button class="btn btn-primary" onclick="openModal('job')">+ Job</button>
+      </div>
+      <table>
+        <thead><tr><th>Name</th><th>Quelle</th><th>Methode</th><th>Primär-Ziel</th><th>Tiers</th><th>Zeitplan</th><th>Aufbew.</th><th>Status</th><th></th></tr></thead>
+        <tbody id="tbl-jobs"></tbody>
+      </table>
+    </div>
+
+  </div>
+</main>
+</div>
+
+<!-- Modals -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalIfOutside(event)">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api';
+let storageMode = 'json';
+let data = { servers: [], sources: [], methods: [], targets: [], jobs: [] };
+let network = null;
+let editId = null;
+let editType = null;
+
+// ─── Init ────────────────────────────────────────────────────────────────────
+
+async function init() {
+  await loadAll();
+  renderStats();
+  renderTables();
+  renderTopology();
+}
+
+async function loadAll() {
+  const cfg = await fetch(`${API}/config/storage`).then(r => r.json());
+  storageMode = cfg.mode || 'json';
+  document.getElementById('storage-mode').value = storageMode;
+  const [servers, sources, methods, targets, jobs, stats] = await Promise.all([
+    fetch(`${API}/servers`).then(r => r.json()),
+    fetch(`${API}/sources`).then(r => r.json()),
+    fetch(`${API}/methods`).then(r => r.json()),
+    fetch(`${API}/targets`).then(r => r.json()),
+    fetch(`${API}/jobs`).then(r => r.json()),
+    fetch(`${API}/stats`).then(r => r.json()),
+  ]);
+  data = { servers, sources, methods, targets, jobs, stats };
+}
+
+async function setStorageMode(mode) {
+  const resp = await fetch(`${API}/config/storage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(mode),
+  });
+  if (!resp.ok) {
+    toast('Speichermodus konnte nicht gesetzt werden', true);
+    return;
+  }
+  const cfg = await resp.json();
+  storageMode = cfg.mode;
+  document.getElementById('storage-mode').value = storageMode;
+  toast(`Speichermodus gesetzt: ${storageMode}`);
+  await loadAll();
+  renderStats();
+  renderTables();
+  network = null;
+}
+
+// ─── Stats ───────────────────────────────────────────────────────────────────
+
+function renderStats() {
+  const s = data.stats || {};
+  document.getElementById('stats-bar').innerHTML = `
+    <div class="stat"><div class="stat-val">${s.servers||0}</div><div class="stat-lbl">Server</div></div>
+    <div class="stat"><div class="stat-val">${s.sources||0}</div><div class="stat-lbl">Quellen</div></div>
+    <div class="stat"><div class="stat-val">${s.jobs||0}</div><div class="stat-lbl">Jobs</div></div>
+    <div class="stat"><div class="stat-val" style="color:var(--tape)">${s.jobs_with_tape||0}</div><div class="stat-lbl">mit Tape</div></div>
+    <div class="stat"><div class="stat-val" style="color:var(--offsite)">${s.jobs_with_offsite||0}</div><div class="stat-lbl">mit Offsite</div></div>
+  `;
+}
+
+// ─── View Switching ──────────────────────────────────────────────────────────
+
+function switchView(view) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(`view-${view}`).classList.add('active');
+  event.target.classList.add('active');
+  if (view === 'topology' && !network) renderTopology();
+  else if (view === 'topology') network.fit();
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const serverById = id => data.servers.find(s => s.id === id);
+const sourceById = id => data.sources.find(s => s.id === id);
+const methodById = id => data.methods.find(m => m.id === id);
+const targetById = id => data.targets.find(t => t.id === id);
+
+function badge(text, cls) {
+  return `<span class="badge badge-${cls}">${text}</span>`;
+}
+
+const typeColors = {
+  server: { physical: '#1e4080', 'vm-proxmox': '#4a1a80', 'vm-hyperv': '#1a4a1a', container: '#2a3a4a', cloud: '#0a3a4a' },
+  source: { database: '#1a3a6a', share: '#3a2a0a', config: '#1a2a3a', 'vm-full': '#3a1a6a', kubernetes: '#1a3a2a', system: '#3a2a2a' },
+  target: { nas: '#1a3a4a', 'tape-lto9': '#4a2a0a', 'offsite-rsync': '#0a3a4a', 'backup-server': '#2a1a4a', local: '#2a2a2a', s3: '#0a2a3a' },
+  method: { 'veeam-agent': '#2a4a2a', 'veeam-br': '#3a4a1a', rsync: '#1a2a4a', 'bash-script': '#4a3a1a', pg_dump: '#4a3a1a' },
+};
+
+function nodeColor(group, type) {
+  const map = typeColors[group] || {};
+  return map[type] || '#2a3a4a';
+}
+
+// ─── Topology ────────────────────────────────────────────────────────────────
+
+function renderTopology() {
+  const nodes = [];
+  const edges = [];
+
+  // Server nodes
+  data.servers.forEach(s => {
+    nodes.push({
+      id: `srv-${s.id}`, label: s.name,
+      title: `${s.hostname||''}\n${s.os||''}\n${s.role||''}`,
+      group: 'server',
+      color: { background: nodeColor('server', s.type), border: '#4a6fa0' },
+      font: { color: '#e2e5f0', size: 12 },
+      shape: 'box', margin: 8,
+    });
+  });
+
+  // Source nodes
+  data.sources.forEach(s => {
+    const srv = serverById(s.server_id);
+    nodes.push({
+      id: `src-${s.id}`, label: `${s.name}`,
+      title: `Typ: ${s.type}\nPfad: ${s.path||'-'}\n${s.description||''}`,
+      group: 'source',
+      color: { background: nodeColor('source', s.type), border: '#4a6a9a' },
+      font: { color: '#e2e5f0', size: 11 },
+      shape: 'ellipse',
+    });
+    // Server → Source
+    edges.push({ from: `srv-${s.server_id}`, to: `src-${s.id}`, color: { color: '#3a4a6a' }, arrows: 'to', width: 1 });
+  });
+
+  // Method nodes
+  data.methods.forEach(m => {
+    nodes.push({
+      id: `mth-${m.id}`, label: m.name,
+      title: `Typ: ${m.type}\n${m.description||''}`,
+      group: 'method',
+      color: { background: nodeColor('method', m.type), border: '#5a6a4a' },
+      font: { color: '#e2e5f0', size: 11 },
+      shape: 'diamond',
+    });
+  });
+
+  // Target nodes
+  data.targets.forEach(t => {
+    const isTape = t.type === 'tape-lto9';
+    const isOffsite = t.type === 'offsite-rsync';
+    nodes.push({
+      id: `tgt-${t.id}`, label: t.name,
+      title: `${t.hostname||''}\n${t.path||''}\nKapazität: ${t.capacity_tb||'?'} TB`,
+      group: 'target',
+      color: {
+        background: nodeColor('target', t.type),
+        border: isTape ? '#f97316' : isOffsite ? '#06b6d4' : '#5a6a8a'
+      },
+      borderWidth: (isTape || isOffsite) ? 3 : 1,
+      font: { color: '#e2e5f0', size: 12, bold: isTape || isOffsite },
+      shape: 'database',
+    });
+  });
+
+  // Job edges: source → method → primary_target
+  data.jobs.forEach(j => {
+    if (j.method_id) {
+      edges.push({
+        from: `src-${j.source_id}`, to: `mth-${j.method_id}`,
+        label: j.schedule || '',
+        color: { color: '#4a7a4a' }, arrows: 'to', width: 2,
+        font: { color: '#8b92a8', size: 10, align: 'middle' },
+      });
+    }
+    if (j.primary_target_id) {
+      const from = j.method_id ? `mth-${j.method_id}` : `src-${j.source_id}`;
+      edges.push({
+        from, to: `tgt-${j.primary_target_id}`,
+        color: { color: '#4a7a4a' }, arrows: 'to', width: 2,
+      });
+    }
+    if (j.tape_target_id && j.primary_target_id) {
+      edges.push({
+        from: `tgt-${j.primary_target_id}`, to: `tgt-${j.tape_target_id}`,
+        label: j.gfs_policy || 'Tape',
+        color: { color: '#f97316' }, arrows: 'to', width: 3, dashes: false,
+        font: { color: '#f97316', size: 10 },
+      });
+    }
+    if (j.offsite_target_id && j.primary_target_id) {
+      edges.push({
+        from: `tgt-${j.primary_target_id}`, to: `tgt-${j.offsite_target_id}`,
+        label: 'Offsite',
+        color: { color: '#06b6d4' }, arrows: 'to', width: 3, dashes: true,
+        font: { color: '#06b6d4', size: 10 },
+      });
+    }
+  });
+
+  const container = document.getElementById('network-container');
+  const options = {
+    layout: { hierarchical: { enabled: true, direction: 'LR', sortMethod: 'directed', levelSeparation: 220, nodeSpacing: 100 } },
+    physics: { enabled: false },
+    interaction: { tooltipDelay: 200, hover: true, navigationButtons: true, keyboard: true },
+    edges: { smooth: { type: 'cubicBezier', forceDirection: 'horizontal' } },
+    nodes: { borderWidth: 1, shadow: { enabled: true, size: 6 } },
+  };
+  network = new vis.Network(container, { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) }, options);
+}
+
+// ─── Tables ──────────────────────────────────────────────────────────────────
+
+function renderTables() {
+  renderServers();
+  renderSources();
+  renderMethods();
+  renderTargets();
+  renderJobs();
+}
+
+function renderServers() {
+  const typeMap = { physical: 'server', 'vm-proxmox': 'vm', 'vm-hyperv': 'vm', container: 'config', cloud: 'offsite' };
+  document.getElementById('tbl-servers').innerHTML = data.servers.map(s => `
+    <tr>
+      <td><strong>${s.name}</strong></td>
+      <td class="font-mono">${s.hostname || '-'}</td>
+      <td>${badge(s.type || '-', typeMap[s.type] || 'config')}</td>
+      <td class="text-muted">${s.os || '-'}</td>
+      <td>${s.role || '-'}</td>
+      <td class="text-muted">${s.notes || ''}</td>
+      <td><button class="btn btn-primary btn-sm" onclick="openModal('server',${s.id})">✏</button>
+          <button class="btn btn-danger btn-sm" onclick="del('servers',${s.id})">✕</button></td>
+    </tr>`).join('');
+}
+
+function renderSources() {
+  const typeMap = { database: 'db', share: 'share', config: 'config', 'vm-full': 'vm', kubernetes: 'active', system: 'server' };
+  document.getElementById('tbl-sources').innerHTML = data.sources.map(s => {
+    const srv = serverById(s.server_id);
+    return `<tr>
+      <td>${badge(srv ? srv.name : '?', 'server')}</td>
+      <td><strong>${s.name}</strong></td>
+      <td>${badge(s.type, typeMap[s.type] || 'config')}</td>
+      <td class="font-mono text-muted">${s.path || '-'}</td>
+      <td class="text-muted">${s.size_gb ? s.size_gb + ' GB' : '-'}</td>
+      <td class="text-muted">${s.description || ''}</td>
+      <td><button class="btn btn-primary btn-sm" onclick="openModal('source',${s.id})">✏</button>
+          <button class="btn btn-danger btn-sm" onclick="del('sources',${s.id})">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderMethods() {
+  const typeColor = { 'veeam-agent': 'active', 'veeam-br': 'active', rsync: 'config', 'bash-script': 'share', pg_dump: 'db' };
+  document.getElementById('tbl-methods').innerHTML = data.methods.map(m => `
+    <tr>
+      <td><strong>${m.name}</strong></td>
+      <td>${badge(m.type, typeColor[m.type] || 'config')}</td>
+      <td class="text-muted">${m.description || ''}</td>
+      <td><button class="btn btn-primary btn-sm" onclick="openModal('method',${m.id})">✏</button>
+          <button class="btn btn-danger btn-sm" onclick="del('methods',${m.id})">✕</button></td>
+    </tr>`).join('');
+}
+
+function renderTargets() {
+  const typeColor = { nas: 'config', 'tape-lto9': 'tape', 'offsite-rsync': 'offsite', 'backup-server': 'server', local: 'config', s3: 'offsite' };
+  document.getElementById('tbl-targets').innerHTML = data.targets.map(t => `
+    <tr>
+      <td><strong>${t.name}</strong></td>
+      <td>${badge(t.type, typeColor[t.type] || 'config')}</td>
+      <td class="font-mono text-muted">${t.hostname || '-'}</td>
+      <td class="font-mono text-muted">${t.path || '-'}</td>
+      <td class="text-muted">${t.capacity_tb ? t.capacity_tb + ' TB' : '-'}</td>
+      <td class="text-muted">${t.description || ''}</td>
+      <td><button class="btn btn-primary btn-sm" onclick="openModal('target',${t.id})">✏</button>
+          <button class="btn btn-danger btn-sm" onclick="del('targets',${t.id})">✕</button></td>
+    </tr>`).join('');
+}
+
+function renderJobs() {
+  const statusColor = { active: 'active', paused: 'paused', disabled: 'disabled' };
+  document.getElementById('tbl-jobs').innerHTML = data.jobs.map(j => {
+    const src = sourceById(j.source_id);
+    const srv = src ? serverById(src.server_id) : null;
+    const mth = methodById(j.method_id);
+    const pt = targetById(j.primary_target_id);
+    const tiers = `
+      <div class="tier-icons">
+        ${pt ? `<div class="tier-icon tier-primary" title="Primär: ${pt.name}">🗄</div>` : ''}
+        ${j.tape_target_id ? `<div class="tier-icon tier-tape" title="Tape: ${(targetById(j.tape_target_id)||{}).name}">📼</div>` : ''}
+        ${j.offsite_target_id ? `<div class="tier-icon tier-offsite" title="Offsite: ${(targetById(j.offsite_target_id)||{}).name}">🌐</div>` : ''}
+      </div>`;
+    return `<tr>
+      <td><strong>${j.name}</strong>${j.is_encrypted ? ' 🔒' : ''}</td>
+      <td>${srv ? badge(srv.name, 'server') : ''} ${src ? src.name : '?'}</td>
+      <td>${mth ? mth.name : '-'}</td>
+      <td class="text-muted">${pt ? pt.name : '-'}</td>
+      <td>${tiers}</td>
+      <td class="text-muted font-mono">${j.schedule || '-'}</td>
+      <td class="text-muted">${j.retention || '-'}</td>
+      <td>${badge(j.status, statusColor[j.status] || 'config')}</td>
+      <td><button class="btn btn-primary btn-sm" onclick="openModal('job',${j.id})">✏</button>
+          <button class="btn btn-danger btn-sm" onclick="del('jobs',${j.id})">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── Delete ───────────────────────────────────────────────────────────────────
+
+async function del(entity, id) {
+  if (!confirm('Wirklich löschen?')) return;
+  await fetch(`${API}/${entity}/${id}`, { method: 'DELETE' });
+  toast('Gelöscht');
+  await loadAll();
+  renderStats();
+  renderTables();
+  network = null;
+}
+
+// ─── Modals ──────────────────────────────────────────────────────────────────
+
+function closeModalIfOutside(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  editId = null; editType = null;
+}
+
+function openModal(type, id = null) {
+  editType = type; editId = id;
+  const obj = id ? data[typeToCollection(type)].find(x => x.id === id) : null;
+  const content = document.getElementById('modal-content');
+
+  if (type === 'server') {
+    content.innerHTML = `
+      <h3>${id ? 'Server bearbeiten' : 'Neuer Server'}</h3>
+      <div class="form-grid">
+        <div><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
+        <div><label>Hostname</label><input id="f-hostname" value="${obj?.hostname||''}"></div>
+        <div><label>Typ</label><select id="f-type">
+          ${['physical','vm-proxmox','vm-hyperv','container','cloud'].map(t =>
+            `<option value="${t}" ${obj?.type===t?'selected':''}>${t}</option>`).join('')}
+        </select></div>
+        <div><label>OS</label><input id="f-os" value="${obj?.os||''}"></div>
+        <div class="form-full"><label>Rolle</label><input id="f-role" value="${obj?.role||''}"></div>
+        <div class="form-full"><label>Notizen</label><textarea id="f-notes">${obj?.notes||''}</textarea></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-cancel" onclick="closeModal()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="saveServer()">Speichern</button>
+      </div>`;
+  } else if (type === 'source') {
+    content.innerHTML = `
+      <h3>${id ? 'Quelle bearbeiten' : 'Neue Backup-Quelle'}</h3>
+      <div class="form-grid">
+        <div class="form-full"><label>Server *</label><select id="f-server">
+          ${data.servers.map(s => `<option value="${s.id}" ${obj?.server_id===s.id?'selected':''}>${s.name}</option>`).join('')}
+        </select></div>
+        <div><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
+        <div><label>Typ</label><select id="f-type">
+          ${['database','share','config','vm-full','system','kubernetes'].map(t =>
+            `<option value="${t}" ${obj?.type===t?'selected':''}>${t}</option>`).join('')}
+        </select></div>
+        <div class="form-full"><label>Pfad</label><input id="f-path" value="${obj?.path||''}"></div>
+        <div><label>Größe (GB)</label><input type="number" id="f-size" value="${obj?.size_gb||''}"></div>
+        <div class="form-full"><label>Beschreibung</label><textarea id="f-desc">${obj?.description||''}</textarea></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-cancel" onclick="closeModal()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="saveSource()">Speichern</button>
+      </div>`;
+  } else if (type === 'method') {
+    content.innerHTML = `
+      <h3>${id ? 'Methode bearbeiten' : 'Neue Backup-Methode'}</h3>
+      <div class="form-grid">
+        <div><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
+        <div><label>Typ</label><select id="f-type">
+          ${['veeam-agent','veeam-br','rsync','bash-script','pg_dump','tar','zabbix-config'].map(t =>
+            `<option value="${t}" ${obj?.type===t?'selected':''}>${t}</option>`).join('')}
+        </select></div>
+        <div class="form-full"><label>Beschreibung</label><textarea id="f-desc">${obj?.description||''}</textarea></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-cancel" onclick="closeModal()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="saveMethod()">Speichern</button>
+      </div>`;
+  } else if (type === 'target') {
+    content.innerHTML = `
+      <h3>${id ? 'Ziel bearbeiten' : 'Neues Backup-Ziel'}</h3>
+      <div class="form-grid">
+        <div><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
+        <div><label>Typ</label><select id="f-type">
+          ${['nas','backup-server','tape-lto9','offsite-rsync','local','s3'].map(t =>
+            `<option value="${t}" ${obj?.type===t?'selected':''}>${t}</option>`).join('')}
+        </select></div>
+        <div><label>Hostname</label><input id="f-hostname" value="${obj?.hostname||''}"></div>
+        <div><label>Kapazität (TB)</label><input type="number" step="0.01" id="f-cap" value="${obj?.capacity_tb||''}"></div>
+        <div class="form-full"><label>Pfad</label><input id="f-path" value="${obj?.path||''}"></div>
+        <div class="form-full"><label>Beschreibung</label><textarea id="f-desc">${obj?.description||''}</textarea></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-cancel" onclick="closeModal()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="saveTarget()">Speichern</button>
+      </div>`;
+  } else if (type === 'job') {
+    const noSel = '<option value="">– kein –</option>';
+    content.innerHTML = `
+      <h3>${id ? 'Job bearbeiten' : 'Neuer Backup-Job'}</h3>
+      <div class="form-grid">
+        <div class="form-full"><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
+        <div class="form-full"><label>Quelle *</label><select id="f-source">
+          ${data.sources.map(s => {
+            const srv = serverById(s.server_id);
+            return `<option value="${s.id}" ${obj?.source_id===s.id?'selected':''}>${srv?srv.name+' / ':''} ${s.name}</option>`;
+          }).join('')}
+        </select></div>
+        <div><label>Methode</label><select id="f-method">${noSel}
+          ${data.methods.map(m => `<option value="${m.id}" ${obj?.method_id===m.id?'selected':''}>${m.name}</option>`).join('')}
+        </select></div>
+        <div><label>Primär-Ziel</label><select id="f-ptarget">${noSel}
+          ${data.targets.map(t => `<option value="${t.id}" ${obj?.primary_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
+        </select></div>
+        <div><label>🟠 Tape-Ziel (2. Tier)</label><select id="f-ttarget">${noSel}
+          ${data.targets.filter(t=>t.type==='tape-lto9').map(t => `<option value="${t.id}" ${obj?.tape_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
+        </select></div>
+        <div><label>🔵 Offsite-Ziel (3. Tier)</label><select id="f-otarget">${noSel}
+          ${data.targets.filter(t=>['offsite-rsync','s3'].includes(t.type)).map(t => `<option value="${t.id}" ${obj?.offsite_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
+        </select></div>
+        <div><label>Zeitplan</label><input id="f-sched" placeholder="täglich 02:00 / 0 2 * * *" value="${obj?.schedule||''}"></div>
+        <div><label>Aufbewahrung</label><input id="f-ret" placeholder="14 Tage" value="${obj?.retention||''}"></div>
+        <div class="form-full"><label>GFS-Policy (Tape)</label><input id="f-gfs" placeholder="7 täglich, 4 wöchentl., 12 monatl." value="${obj?.gfs_policy||''}"></div>
+        <div><label>Status</label><select id="f-status">
+          ${['active','paused','disabled'].map(s => `<option value="${s}" ${obj?.status===s?'selected':''}>${s}</option>`).join('')}
+        </select></div>
+        <div style="display:flex;gap:12px;align-items:center;padding-top:20px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="f-enc" ${obj?.is_encrypted?'checked':''}> Verschlüsselt
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="f-comp" ${obj?.is_compressed!==false?'checked':''}> Komprimiert
+          </label>
+        </div>
+        <div class="form-full"><label>Notizen</label><textarea id="f-notes">${obj?.notes||''}</textarea></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-cancel" onclick="closeModal()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="saveJob()">Speichern</button>
+      </div>`;
+  }
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function typeToCollection(type) {
+  return { server: 'servers', source: 'sources', method: 'methods', target: 'targets', job: 'jobs' }[type];
+}
+
+function intOrNull(id) { return id ? parseInt(id) : null; }
+function floatOrNull(id) { return id ? parseFloat(id) : null; }
+function g(id) { return document.getElementById(id); }
+
+async function saveServer() {
+  const body = { name: g('f-name').value, hostname: g('f-hostname').value || null,
+    type: g('f-type').value, os: g('f-os').value || null,
+    role: g('f-role').value || null, notes: g('f-notes').value || null };
+  await upsert('servers', body);
+}
+async function saveSource() {
+  const body = { server_id: parseInt(g('f-server').value), name: g('f-name').value,
+    type: g('f-type').value, path: g('f-path').value || null,
+    size_gb: floatOrNull(g('f-size').value), description: g('f-desc').value || null };
+  await upsert('sources', body);
+}
+async function saveMethod() {
+  const body = { name: g('f-name').value, type: g('f-type').value, description: g('f-desc').value || null };
+  await upsert('methods', body);
+}
+async function saveTarget() {
+  const body = { name: g('f-name').value, type: g('f-type').value,
+    hostname: g('f-hostname').value || null, path: g('f-path').value || null,
+    capacity_tb: floatOrNull(g('f-cap').value), description: g('f-desc').value || null };
+  await upsert('targets', body);
+}
+async function saveJob() {
+  const body = {
+    name: g('f-name').value, source_id: parseInt(g('f-source').value),
+    method_id: intOrNull(g('f-method').value), primary_target_id: intOrNull(g('f-ptarget').value),
+    tape_target_id: intOrNull(g('f-ttarget').value), offsite_target_id: intOrNull(g('f-otarget').value),
+    schedule: g('f-sched').value || null, retention: g('f-ret').value || null,
+    gfs_policy: g('f-gfs').value || null, status: g('f-status').value,
+    is_encrypted: g('f-enc').checked, is_compressed: g('f-comp').checked,
+    notes: g('f-notes').value || null,
+  };
+  await upsert('jobs', body);
+}
+
+async function upsert(entity, body) {
+  const url = editId ? `${API}/${entity}/${editId}` : `${API}/${entity}`;
+  const method = editId ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) { toast('Fehler beim Speichern', true); return; }
+  toast('Gespeichert ✓');
+  closeModal();
+  await loadAll();
+  renderStats();
+  renderTables();
+  network = null;
+}
+
+function exportJSON() {
+  const payload = {
+    exported_at: new Date().toISOString(),
+    servers: data.servers,
+    sources: data.sources,
+    methods: data.methods,
+    targets: data.targets,
+    jobs: data.jobs,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `backupdocu_export_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('Exportierte JSON-Datei erstellt');
+}
+
+function importJSON(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const imported = JSON.parse(reader.result);
+      data.servers = imported.servers || [];
+      data.sources = imported.sources || [];
+      data.methods = imported.methods || [];
+      data.targets = imported.targets || [];
+      data.jobs = imported.jobs || [];
+      renderStats();
+      renderTables();
+      network = null;
+      toast('JSON importiert (temporär im Browser)');
+    } catch (err) {
+      toast('Import fehlgeschlagen: ungültiges JSON', true);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+
+function toast(msg, isError = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast${isError ? ' error' : ''} show`;
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+init();
+</script>
+</body>
+</html>
