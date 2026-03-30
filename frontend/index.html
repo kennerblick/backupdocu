@@ -116,7 +116,8 @@ textarea { resize: vertical; min-height: 60px; }
   <div class="stats-bar" id="stats-bar"></div>
   <div class="nav-tabs">
     <button class="nav-tab active" onclick="switchView('topology')">🗺 Topologie</button>
-    <button class="nav-tab" onclick="switchView('table')">📋 Tabellen</button>
+    <button class="nav-tab" onclick="switchView('servers')">🖥 Server</button>
+    <button class="nav-tab" onclick="switchView('table')">📋 Backups</button>
   </div>
   <div style="margin-left: 16px; display: flex; gap: 8px;">
     <button class="btn btn-primary btn-sm" onclick="exportJSON()">📤 Export JSON</button>
@@ -156,6 +157,23 @@ textarea { resize: vertical; min-height: 60px; }
     </div>
   </div>
 
+  <!-- Server View -->
+  <div class="view" id="view-servers">
+    <div style="padding: 20px; gap: 12px; display: flex; flex-direction: column;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 style="margin: 0; color: var(--accent);">Server-Verwaltung</h2>
+        <button class="btn btn-primary" onclick="openModal('server')">+ Neuer Server</button>
+      </div>
+      
+      <div class="section">
+        <table>
+          <thead><tr><th>Name</th><th>Hostname</th><th>Typ</th><th>OS</th><th>Rolle</th><th>Notizen</th><th></th></tr></thead>
+          <tbody id="tbl-servers"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- Table View -->
   <div class="view" id="view-table">
 
@@ -165,22 +183,8 @@ textarea { resize: vertical; min-height: 60px; }
       <select id="server-selector" style="flex: 0 0 280px; background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 10px; cursor: pointer;" onchange="selectServer(this.value)">
         <option value="">-- Server wählen --</option>
       </select>
-      <button class="btn btn-primary" style="margin-left: auto;" onclick="openModal('server')">+ Neuer Server</button>
     </div>
 
-    <!-- Servers -->
-    <div class="section" onclick="toggleSection(this)">
-      <div class="section-header">
-        <div style="display:flex;align-items:center">
-          <span class="chevron">▼</span>
-          <h2>🖥 Server</h2>
-        </div>
-      </div>
-      <table>
-        <thead><tr><th>Name</th><th>Hostname</th><th>Typ</th><th>OS</th><th>Rolle</th><th>Notizen</th><th></th></tr></thead>
-        <tbody id="tbl-servers"></tbody>
-      </table>
-    </div>
 
     <div class="section collapsed" onclick="toggleSection(this)" id="sources-section">
       <div class="section-header">
@@ -360,6 +364,8 @@ function switchView(view) {
   event.target.classList.add('active');
   if (view === 'topology' && !network) renderTopology();
   else if (view === 'topology') network.fit();
+  else if (view === 'servers') renderServers();
+  else if (view === 'table') renderTables();
 }
 
 // ─── Accordion ────────────────────────────────────────────────────────────────
@@ -663,8 +669,12 @@ function openModal(type, id = null) {
       toast('Bitte zuerst einen Server wählen', true);
       return;
     }
+    const server = serverById(selectedServerId);
     content.innerHTML = `
       <h3>${id ? 'Quelle bearbeiten' : 'Neue Backup-Quelle'}</h3>
+      <div style="background: var(--bg3); padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 14px;">
+        <strong>Server:</strong> ${server ? server.name : 'Unbekannt'} (${server ? server.hostname || 'N/A' : ''})
+      </div>
       <div class="form-grid">
         <div><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
         <div><label>Typ</label><select id="f-type">
@@ -702,9 +712,13 @@ function openModal(type, id = null) {
       toast('Bitte zuerst einen Server wählen', true);
       return;
     }
+    const server = serverById(selectedServerId);
     const noSel = '<option value="">– kein –</option>';
     content.innerHTML = `
       <h3>${id ? 'Job bearbeiten' : 'Neuer Backup-Job'}</h3>
+      <div style="background: var(--bg3); padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 14px;">
+        <strong>Server:</strong> ${server ? server.name : 'Unbekannt'} (${server ? server.hostname || 'N/A' : ''})
+      </div>
       <div class="form-grid">
         <div class="form-full"><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
         <div class="form-full"><label>Quelle *</label><select id="f-source">
