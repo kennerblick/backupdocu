@@ -202,20 +202,6 @@ textarea { resize: vertical; min-height: 60px; }
       </table>
     </div>
 
-    <!-- Backup Methods (Vordefiniert) -->
-    <div class="section collapsed" onclick="toggleSection(this)">
-      <div class="section-header">
-        <div style="display:flex;align-items:center">
-          <span class="chevron">▼</span>
-          <h2>⚙ Backup-Methoden</h2>
-        </div>
-      </div>
-      <table>
-        <thead><tr><th>Name</th><th>Typ</th><th>Beschreibung</th></tr></thead>
-        <tbody id="tbl-methods"></tbody>
-      </table>
-    </div>
-
     <!-- Backup Targets -->
     <div class="section collapsed" onclick="toggleSection(this)">
       <div class="section-header">
@@ -508,9 +494,7 @@ function renderTopology() {
 // ─── Tables ──────────────────────────────────────────────────────────────────
 
 function renderTables() {
-  renderServers();
   renderSources();
-  renderMethods();
   renderTargets();
   renderJobs();
 }
