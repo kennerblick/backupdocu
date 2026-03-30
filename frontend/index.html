@@ -266,7 +266,7 @@ textarea { resize: vertical; min-height: 60px; }
 <div class="toast" id="toast"></div>
 
 <script>
-const API = 'http://localhost:8000';
+const API = 'http://localhost:8000/api';
 let data = { servers: [], methods: [], targets: [] };
 let currentServerData = { sources: [], jobs: [] };
 let selectedServerId = null;
@@ -292,13 +292,12 @@ async function init() {
 }
 
 async function loadAll() {
-  const [servers, methods, targets, stats] = await Promise.all([
+  const [servers, methods, targets] = await Promise.all([
     fetch(`${API}/servers`).then(r => r.json()).catch(() => []),
     fetch(`${API}/methods`).then(r => r.json()).catch(() => []),
     fetch(`${API}/targets`).then(r => r.json()).catch(() => []),
-    fetch(`${API}/stats`).then(r => r.json()).catch(() => ({})),
   ]);
-  data = { servers, methods, targets, stats };
+  data = { servers, methods, targets };
 }
 
 async function loadServerData(serverId) {
