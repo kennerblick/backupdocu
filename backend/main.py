@@ -1,86 +1,210 @@
 ﻿from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from pathlib import Path
 from datetime import datetime
 import json
+import shutil
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DATA DIRECTORY SETUP
+# ─────────────────────────────────────────────────────────────────────────────
 
 DATA_DIR = Path(__file__).parent / 'data'
 DATA_DIR.mkdir(exist_ok=True)
+SERVERS_DIR = DATA_DIR / 'servers'
+SERVERS_DIR.mkdir(exist_ok=True)
 
-COLLECTION_FILES = {
+GLOBAL_FILES = {
     'servers': DATA_DIR / 'servers.json',
-    'sources': DATA_DIR / 'sources.json',
     'methods': DATA_DIR / 'methods.json',
     'targets': DATA_DIR / 'targets.json',
-    'jobs': DATA_DIR / 'jobs.json',
+    'settings': DATA_DIR / 'settings.json',
 }
 
-for p in COLLECTION_FILES.values():
-    if not p.exists():
-        p.write_text('[]', encoding='utf-8')
+# Initialize global files
+for name, path in GLOBAL_FILES.items():
+    if not path.exists():
+        if name == 'methods':
+            path.write_text(json.dumps([
+                {'id': 1, 'name': 'Veeam Agent', 'type': 'veeam-agent', 'description': 'Veeam Agent für Linux/Windows'},
+                {'id': 2, 'name': 'Veeam Backup & Replication', 'type': 'veeam-br', 'description': 'Veeam Backup & Replication'},
+                {'id': 3, 'name': 'rsync', 'type': 'rsync', 'description': 'rsync Backup'},
+                {'id': 4, 'name': 'Bash Script', 'type': 'bash-script', 'description': 'Benutzerdefiniertes Bash-Skript'},
+                {'id': 5, 'name': 'pg_dump', 'type': 'pg_dump', 'description': 'PostgreSQL Dump'},
+                {'id': 6, 'name': 'Tape Job', 'type': 'tape-job', 'description': 'Tape Sicherung'},
+            ], indent=2, ensure_ascii=False), encoding='utf-8')
+        elif name == 'settings':
+            path.write_text(json.dumps({'custom_methods': []}, indent=2, ensure_ascii=False), encoding='utf-8')
+        else:
+            path.write_text('[]', encoding='utf-8')
 
 
-def load_collection(name: str):
-    path = COLLECTION_FILES.get(name)
-    if not path:
-        raise ValueError('Unknown collection')
-    try:
-        data = json.loads(path.read_text(encoding='utf-8'))
-    except json.JSONDecodeError:
-        data = []
-    return data
+# ─────────────────────────────────────────────────────────────────────────────
+# DATA STORE CLASS
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DataStore:
+    """Manages data storage with per-server directories."""
+    
+    @staticmethod
+    def load_global(name: str) -> List[Dict[str, Any]]:
+        """Load global collection (servers, methods, targets, settings)."""
+        path = GLOBAL_FILES.get(name)
+        if not path:
+            raise ValueError(f'Unknown global collection: {name}')
+        try:
+            return json.loads(path.read_text(encoding='utf-8'))
+        except (json.JSONDecodeError, FileNotFoundError):
+            return []
+    
+    @staticmethod
+    def save_global(name: str, data: List[Dict[str, Any]]) -> None:
+        """Save global collection."""
+        path = GLOBAL_FILES.get(name)
+        if not path:
+            raise ValueError(f'Unknown global collection: {name}')
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')
+    
+    @staticmethod
+    def load_server_data(server_id: int, name: str) -> List[Dict[str, Any]]:
+        """Load server-specific collection (sources or jobs)."""
+        if name not in ['sources', 'jobs']:
+            raise ValueError(f'Unknown server collection: {name}')
+        
+        server_dir = SERVERS_DIR / str(server_id)
+        server_dir.mkdir(exist_ok=True)
+        path = server_dir / f'{name}.json'
+        
+        if not path.exists():
+            return []
+        
+        try:
+            return json.loads(path.read_text(encoding='utf-8'))
+        except (json.JSONDecodeError, FileNotFoundError):
+            return []
+    
+    @staticmethod
+    def save_server_data(server_id: int, name: str, data: List[Dict[str, Any]]) -> None:
+        """Save server-specific collection."""
+        if name not in ['sources', 'jobs']:
+            raise ValueError(f'Unknown server collection: {name}')
+        
+        server_dir = SERVERS_DIR / str(server_id)
+        server_dir.mkdir(exist_ok=True)
+        path = server_dir / f'{name}.json'
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')
+    
+    @staticmethod
+    def delete_server_directory(server_id: int) -> None:
+        """Delete entire server directory."""
+        server_dir = SERVERS_DIR / str(server_id)
+        if server_dir.exists():
+            shutil.rmtree(server_dir)
 
 
-def save_collection(name: str, data):
-    path = COLLECTION_FILES.get(name)
-    if not path:
-        raise ValueError('Unknown collection')
-    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPER FUNCTIONS
+# ─────────────────────────────────────────────────────────────────────────────
 
-
-def next_id(items):
+def next_id(items: List[Dict[str, Any]]) -> int:
+    """Generate next ID for collection."""
     return max((item.get('id', 0) for item in items), default=0) + 1
 
 
-def get_item(collection: str, item_id: int):
-    items = load_collection(collection)
+def get_item_global(collection: str, item_id: int) -> Optional[Dict[str, Any]]:
+    """Get item from global collection."""
+    items = DataStore.load_global(collection)
     for item in items:
         if item.get('id') == item_id:
             return item
     return None
 
 
-def upsert_item(collection: str, item_id: Optional[int], payload: dict):
-    items = load_collection(collection)
+def get_item_server(server_id: int, collection: str, item_id: int) -> Optional[Dict[str, Any]]:
+    """Get item from server-specific collection."""
+    items = DataStore.load_server_data(server_id, collection)
+    for item in items:
+        if item.get('id') == item_id:
+            return item
+    return None
+
+
+def upsert_global(collection: str, item_id: Optional[int], payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Create or update item in global collection."""
+    items = DataStore.load_global(collection)
+    
     if item_id is None:
         payload['id'] = next_id(items)
         payload['created_at'] = datetime.utcnow().isoformat()
         payload['updated_at'] = datetime.utcnow().isoformat()
         items.append(payload)
-        save_collection(collection, items)
+        DataStore.save_global(collection, items)
         return payload
-
-    existing = get_item(collection, item_id)
+    
+    existing = get_item_global(collection, item_id)
     if not existing:
         raise HTTPException(status_code=404, detail='Not found')
+    
     for key, value in payload.items():
         existing[key] = value
     existing['updated_at'] = datetime.utcnow().isoformat()
-    save_collection(collection, items)
+    DataStore.save_global(collection, items)
     return existing
 
 
-def delete_item(collection: str, item_id: int):
-    items = load_collection(collection)
+def upsert_server(server_id: int, collection: str, item_id: Optional[int], payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Create or update item in server-specific collection."""
+    items = DataStore.load_server_data(server_id, collection)
+    
+    if item_id is None:
+        payload['id'] = next_id(items)
+        payload['created_at'] = datetime.utcnow().isoformat()
+        payload['updated_at'] = datetime.utcnow().isoformat()
+        items.append(payload)
+        DataStore.save_server_data(server_id, collection, items)
+        return payload
+    
+    existing = get_item_server(server_id, collection, item_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail='Not found')
+    
+    for key, value in payload.items():
+        existing[key] = value
+    existing['updated_at'] = datetime.utcnow().isoformat()
+    DataStore.save_server_data(server_id, collection, items)
+    return existing
+
+
+def delete_global(collection: str, item_id: int) -> None:
+    """Delete item from global collection."""
+    items = DataStore.load_global(collection)
     new_items = [item for item in items if item.get('id') != item_id]
     if len(new_items) == len(items):
         raise HTTPException(status_code=404, detail='Not found')
-    save_collection(collection, new_items)
+    DataStore.save_global(collection, new_items)
 
 
-# Schemas
+def delete_server(server_id: int, collection: str, item_id: int) -> None:
+    """Delete item from server-specific collection."""
+    items = DataStore.load_server_data(server_id, collection)
+    new_items = [item for item in items if item.get('id') != item_id]
+    if len(new_items) == len(items):
+        raise HTTPException(status_code=404, detail='Not found')
+    DataStore.save_server_data(server_id, collection, new_items)
+
+
+def delete_server_with_data(server_id: int) -> None:
+    """Delete server and all associated data."""
+    delete_global('servers', server_id)
+    DataStore.delete_server_directory(server_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PYDANTIC MODELS
+# ─────────────────────────────────────────────────────────────────────────────
+
 class ServerBase(BaseModel):
     name: str
     hostname: Optional[str] = None
@@ -90,17 +214,7 @@ class ServerBase(BaseModel):
     notes: Optional[str] = None
 
 
-class BackupTargetBase(BaseModel):
-    name: str
-    type: str
-    hostname: Optional[str] = None
-    path: Optional[str] = None
-    capacity_tb: Optional[float] = None
-    description: Optional[str] = None
-
-
 class BackupSourceBase(BaseModel):
-    server_id: int
     name: str
     type: str
     path: Optional[str] = None
@@ -108,9 +222,12 @@ class BackupSourceBase(BaseModel):
     description: Optional[str] = None
 
 
-class BackupMethodBase(BaseModel):
+class BackupTargetBase(BaseModel):
     name: str
     type: str
+    hostname: Optional[str] = None
+    path: Optional[str] = None
+    capacity_tb: Optional[float] = None
     description: Optional[str] = None
 
 
@@ -130,7 +247,11 @@ class BackupJobBase(BaseModel):
     notes: Optional[str] = None
 
 
-app = FastAPI(title='BackupDocu API', version='1.0.0')
+# ─────────────────────────────────────────────────────────────────────────────
+# FASTAPI APP SETUP
+# ─────────────────────────────────────────────────────────────────────────────
+
+app = FastAPI(title='BackupDocu API', version='2.0.0')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],
@@ -139,69 +260,224 @@ app.add_middleware(
 )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ENDPOINTS: HEALTH & STATS
+# ─────────────────────────────────────────────────────────────────────────────
+
 @app.get('/api/health')
 def health():
-    return {'status': 'ok', 'version': '1.0.0', 'storage': 'json'}
-
-
-@app.get('/api/topology')
-def get_topology():
-    return {
-        'servers': load_collection('servers'),
-        'sources': load_collection('sources'),
-        'methods': load_collection('methods'),
-        'targets': load_collection('targets'),
-        'jobs': load_collection('jobs'),
-    }
+    return {'status': 'ok', 'version': '2.0.0', 'storage': 'json', 'architecture': 'per-server-directories'}
 
 
 @app.get('/api/stats')
 def get_stats():
-    servers = load_collection('servers')
-    sources = load_collection('sources')
-    methods = load_collection('methods')
-    targets = load_collection('targets')
-    jobs = load_collection('jobs')
+    servers = DataStore.load_global('servers')
+    targets = DataStore.load_global('targets')
+    
+    total_sources = 0
+    total_jobs = 0
+    jobs_active = 0
+    jobs_with_tape = 0
+    jobs_with_offsite = 0
+    
+    for server in servers:
+        server_id = server.get('id')
+        sources = DataStore.load_server_data(server_id, 'sources')
+        jobs = DataStore.load_server_data(server_id, 'jobs')
+        
+        total_sources += len(sources)
+        total_jobs += len(jobs)
+        jobs_active += len([j for j in jobs if j.get('status') == 'active'])
+        jobs_with_tape += len([j for j in jobs if j.get('tape_target_id')])
+        jobs_with_offsite += len([j for j in jobs if j.get('offsite_target_id')])
+    
     return {
         'servers': len(servers),
-        'sources': len(sources),
-        'methods': len(methods),
+        'sources': total_sources,
+        'methods': len(DataStore.load_global('methods')),
         'targets': len(targets),
-        'jobs': len(jobs),
-        'jobs_active': len([j for j in jobs if j.get('status') == 'active']),
-        'jobs_with_tape': len([j for j in jobs if j.get('tape_target_id')]),
-        'jobs_with_offsite': len([j for j in jobs if j.get('offsite_target_id')]),
+        'jobs': total_jobs,
+        'jobs_active': jobs_active,
+        'jobs_with_tape': jobs_with_tape,
+        'jobs_with_offsite': jobs_with_offsite,
     }
 
 
-def create_crud(collection: str, schema):
+# ─────────────────────────────────────────────────────────────────────────────
+# ENDPOINTS: GLOBAL RESOURCES (Servers, Methods, Targets)
+# ─────────────────────────────────────────────────────────────────────────────
 
-    @app.get(f'/api/{collection}')
-    def list_items():
-        return load_collection(collection)
-
-    @app.get(f'/api/{collection}/{{item_id}}')
-    def get_item_by_id(item_id: int):
-        item = get_item(collection, item_id)
-        if not item:
-            raise HTTPException(status_code=404, detail='Not found')
-        return item
-
-    @app.post(f'/api/{collection}', status_code=201)
-    def add(item: schema):
-        return upsert_item(collection, None, item.model_dump())
-
-    @app.put(f'/api/{collection}/{{item_id}}')
-    def update(item_id: int, item: schema):
-        return upsert_item(collection, item_id, item.model_dump())
-
-    @app.delete(f'/api/{collection}/{{item_id}}', status_code=204)
-    def remove(item_id: int):
-        delete_item(collection, item_id)
+@app.get('/api/servers')
+def list_servers():
+    return DataStore.load_global('servers')
 
 
-create_crud('servers', ServerBase)
-create_crud('sources', BackupSourceBase)
-create_crud('methods', BackupMethodBase)
-create_crud('targets', BackupTargetBase)
-create_crud('jobs', BackupJobBase)
+@app.get('/api/servers/{server_id}')
+def get_server(server_id: int):
+    server = get_item_global('servers', server_id)
+    if not server:
+        raise HTTPException(status_code=404, detail='Server not found')
+    return server
+
+
+@app.post('/api/servers', status_code=201)
+def create_server(server: ServerBase):
+    return upsert_global('servers', None, server.model_dump())
+
+
+@app.put('/api/servers/{server_id}')
+def update_server(server_id: int, server: ServerBase):
+    return upsert_global('servers', server_id, server.model_dump())
+
+
+@app.delete('/api/servers/{server_id}', status_code=204)
+def delete_server_endpoint(server_id: int):
+    delete_server_with_data(server_id)
+
+
+@app.get('/api/methods')
+def list_methods():
+    return DataStore.load_global('methods')
+
+
+@app.get('/api/methods/{method_id}')
+def get_method(method_id: int):
+    method = get_item_global('methods', method_id)
+    if not method:
+        raise HTTPException(status_code=404, detail='Method not found')
+    return method
+
+
+@app.get('/api/targets')
+def list_targets():
+    return DataStore.load_global('targets')
+
+
+@app.get('/api/targets/{target_id}')
+def get_target(target_id: int):
+    target = get_item_global('targets', target_id)
+    if not target:
+        raise HTTPException(status_code=404, detail='Target not found')
+    return target
+
+
+@app.post('/api/targets', status_code=201)
+def create_target(target: BackupTargetBase):
+    return upsert_global('targets', None, target.model_dump())
+
+
+@app.put('/api/targets/{target_id}')
+def update_target(target_id: int, target: BackupTargetBase):
+    return upsert_global('targets', target_id, target.model_dump())
+
+
+@app.delete('/api/targets/{target_id}', status_code=204)
+def delete_target(target_id: int):
+    delete_global('targets', target_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ENDPOINTS: SERVER-SPECIFIC RESOURCES (Sources, Jobs)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get('/api/servers/{server_id}/sources')
+def list_sources(server_id: int):
+    if not get_item_global('servers', server_id):
+        raise HTTPException(status_code=404, detail='Server not found')
+    return DataStore.load_server_data(server_id, 'sources')
+
+
+@app.get('/api/servers/{server_id}/sources/{source_id}')
+def get_source(server_id: int, source_id: int):
+    if not get_item_global('servers', server_id):
+        raise HTTPException(status_code=404, detail='Server not found')
+    source = get_item_server(server_id, 'sources', source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail='Source not found')
+    return source
+
+
+@app.post('/api/servers/{server_id}/sources', status_code=201)
+def create_source(server_id: int, source: BackupSourceBase):
+    if not get_item_global('servers', server_id):
+        raise HTTPException(status_code=404, detail='Server not found')
+    return upsert_server(server_id, 'sources', None, source.model_dump())
+
+
+@app.put('/api/servers/{server_id}/sources/{source_id}')
+def update_source(server_id: int, source_id: int, source: BackupSourceBase):
+    if not get_item_global('servers', server_id):
+        raise HTTPException(status_code=404, detail='Server not found')
+    return upsert_server(server_id, 'sources', source_id, source.model_dump())
+
+
+@app.delete('/api/servers/{server_id}/sources/{source_id}', status_code=204)
+def delete_source(server_id: int, source_id: int):
+    if not get_item_global('servers', server_id):
+        raise HTTPException(status_code=404, detail='Server not found')
+    delete_server(server_id, 'sources', source_id)
+
+
+@app.get('/api/servers/{server_id}/jobs')
+def list_jobs(server_id: int):
+    if not get_item_global('servers', server_id):
+        raise HTTPException(status_code=404, detail='Server not found')
+    return DataStore.load_server_data(server_id, 'jobs')
+
+
+@app.get('/api/servers/{server_id}/jobs/{job_id}')
+def get_job(server_id: int, job_id: int):
+    if not get_item_global('servers', server_id):
+        raise HTTPException(status_code=404, detail='Server not found')
+    job = get_item_server(server_id, 'jobs', job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail='Job not found')
+    return job
+
+
+@app.post('/api/servers/{server_id}/jobs', status_code=201)
+def create_job(server_id: int, job: BackupJobBase):
+    if not get_item_global('servers', server_id):
+        raise HTTPException(status_code=404, detail='Server not found')
+    return upsert_server(server_id, 'jobs', None, job.model_dump())
+
+
+@app.put('/api/servers/{server_id}/jobs/{job_id}')
+def update_job(server_id: int, job_id: int, job: BackupJobBase):
+    if not get_item_global('servers', server_id):
+        raise HTTPException(status_code=404, detail='Server not found')
+    return upsert_server(server_id, 'jobs', job_id, job.model_dump())
+
+
+@app.delete('/api/servers/{server_id}/jobs/{job_id}', status_code=204)
+def delete_job(server_id: int, job_id: int):
+    if not get_item_global('servers', server_id):
+        raise HTTPException(status_code=404, detail='Server not found')
+    delete_server(server_id, 'jobs', job_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LEGACY COMPATIBILITY
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get('/api/topology')
+def get_topology():
+    """Legacy endpoint - returns all data in old structure."""
+    servers = DataStore.load_global('servers')
+    all_sources = []
+    all_jobs = []
+    
+    for server in servers:
+        sid = server.get('id')
+        sources = DataStore.load_server_data(sid, 'sources')
+        jobs = DataStore.load_server_data(sid, 'jobs')
+        all_sources.extend(sources)
+        all_jobs.extend(jobs)
+    
+    return {
+        'servers': servers,
+        'sources': all_sources,
+        'methods': DataStore.load_global('methods'),
+        'targets': DataStore.load_global('targets'),
+        'jobs': all_jobs,
+    }

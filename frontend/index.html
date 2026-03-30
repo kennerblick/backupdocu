@@ -159,15 +159,21 @@ textarea { resize: vertical; min-height: 60px; }
   <!-- Table View -->
   <div class="view" id="view-table">
 
+    <!-- Server Selector -->
+    <div style="background: var(--bg2); border-bottom: 1px solid var(--border); padding: 16px 20px; display: flex; gap: 16px; align-items: center;">
+      <label style="color: var(--text2); font-size: 13px; font-weight: 600;">Markierter Server:</label>
+      <select id="server-selector" style="flex: 0 0 280px; background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 10px; cursor: pointer;" onchange="selectServer(this.value)">
+        <option value="">-- Server wählen --</option>
+      </select>
+      <button class="btn btn-primary" style="margin-left: auto;" onclick="openModal('server')">+ Neuer Server</button>
+    </div>
+
     <!-- Servers -->
     <div class="section" onclick="toggleSection(this)">
       <div class="section-header">
         <div style="display:flex;align-items:center">
           <span class="chevron">▼</span>
           <h2>🖥 Server</h2>
-        </div>
-        <div class="section-content" onclick="event.stopPropagation()">
-          <button class="btn btn-primary" onclick="openModal('server')">+ Server</button>
         </div>
       </div>
       <table>
@@ -176,8 +182,8 @@ textarea { resize: vertical; min-height: 60px; }
       </table>
     </div>
 
-    <!-- Backup Sources -->
-    <div class="section collapsed" onclick="toggleSection(this)">
+    <!-- Backup Sources (Server-spezifisch) -->
+    <div class="section collapsed" onclick="toggleSection(this)" id="sources-section" style="display:none;">
       <div class="section-header">
         <div style="display:flex;align-items:center">
           <span class="chevron">▼</span>
@@ -188,24 +194,21 @@ textarea { resize: vertical; min-height: 60px; }
         </div>
       </div>
       <table>
-        <thead><tr><th>Server</th><th>Name</th><th>Typ</th><th>Pfad</th><th>Größe</th><th>Beschreibung</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Typ</th><th>Pfad</th><th>Größe</th><th>Beschreibung</th><th></th></tr></thead>
         <tbody id="tbl-sources"></tbody>
       </table>
     </div>
 
-    <!-- Backup Methods -->
+    <!-- Backup Methods (Vordefiniert) -->
     <div class="section collapsed" onclick="toggleSection(this)">
       <div class="section-header">
         <div style="display:flex;align-items:center">
           <span class="chevron">▼</span>
           <h2>⚙ Backup-Methoden</h2>
         </div>
-        <div class="section-content" onclick="event.stopPropagation()">
-          <button class="btn btn-primary" onclick="openModal('method')">+ Methode</button>
-        </div>
       </div>
       <table>
-        <thead><tr><th>Name</th><th>Typ</th><th>Beschreibung</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Typ</th><th>Beschreibung</th></tr></thead>
         <tbody id="tbl-methods"></tbody>
       </table>
     </div>
@@ -227,8 +230,8 @@ textarea { resize: vertical; min-height: 60px; }
       </table>
     </div>
 
-    <!-- Backup Jobs -->
-    <div class="section collapsed" onclick="toggleSection(this)">
+    <!-- Backup Jobs (Server-spezifisch) -->
+    <div class="section collapsed" onclick="toggleSection(this)" id="jobs-section" style="display:none;">
       <div class="section-header">
         <div style="display:flex;align-items:center">
           <span class="chevron">▼</span>
@@ -239,7 +242,7 @@ textarea { resize: vertical; min-height: 60px; }
         </div>
       </div>
       <table>
-        <thead><tr><th>Name</th><th>Quelle</th><th>Methode</th><th>Primär-Ziel</th><th>Tiers</th><th>Zeitplan</th><th>Aufbew.</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Quelle</th><th>Methode</th><th>Primär-Ziel</th><th>Tiers</th><th>Zeitplan</th><th>Status</th><th></th></tr></thead>
         <tbody id="tbl-jobs"></tbody>
       </table>
     </div>
@@ -257,7 +260,9 @@ textarea { resize: vertical; min-height: 60px; }
 
 <script>
 const API = '/api';
-let data = { servers: [], sources: [], methods: [], targets: [], jobs: [] };
+let data = { servers: [], methods: [], targets: [] };
+let currentServerData = { sources: [], jobs: [] };
+let selectedServerId = null;
 let network = null;
 let editId = null;
 let editType = null;
@@ -267,20 +272,50 @@ let editType = null;
 async function init() {
   await loadAll();
   renderStats();
+  renderServerSelector();
   renderTables();
   renderTopology();
 }
 
 async function loadAll() {
-  const [servers, sources, methods, targets, jobs, stats] = await Promise.all([
-    fetch(`${API}/servers`).then(r => r.json()),
-    fetch(`${API}/sources`).then(r => r.json()),
-    fetch(`${API}/methods`).then(r => r.json()),
-    fetch(`${API}/targets`).then(r => r.json()),
-    fetch(`${API}/jobs`).then(r => r.json()),
-    fetch(`${API}/stats`).then(r => r.json()),
+  const [servers, methods, targets, stats] = await Promise.all([
+    fetch(`${API}/servers`).then(r => r.json()).catch(() => []),
+    fetch(`${API}/methods`).then(r => r.json()).catch(() => []),
+    fetch(`${API}/targets`).then(r => r.json()).catch(() => []),
+    fetch(`${API}/stats`).then(r => r.json()).catch(() => ({})),
   ]);
-  data = { servers, sources, methods, targets, jobs, stats };
+  data = { servers, methods, targets, stats };
+}
+
+async function loadServerData(serverId) {
+  if (!serverId) {
+    currentServerData = { sources: [], jobs: [] };
+    return;
+  }
+  const [sources, jobs] = await Promise.all([
+    fetch(`${API}/servers/${serverId}/sources`).then(r => r.json()).catch(() => []),
+    fetch(`${API}/servers/${serverId}/jobs`).then(r => r.json()).catch(() => []),
+  ]);
+  currentServerData = { sources, jobs };
+}
+
+// ─── Server Selection ─────────────────────────────────────────────────────────
+
+async function selectServer(serverId) {
+  selectedServerId = serverId ? parseInt(serverId) : null;
+  await loadServerData(selectedServerId);
+  renderTables();
+  document.getElementById('sources-section').style.display = selectedServerId ? 'block' : 'none';
+  document.getElementById('jobs-section').style.display = selectedServerId ? 'block' : 'none';
+}
+
+function renderServerSelector() {
+  const selector = document.getElementById('server-selector');
+  selector.innerHTML = '<option value="">-- Server wählen --</option>' + 
+    data.servers.map(s => `<option value="${s.id}">${s.name} (${s.hostname || 'N/A'})</option>`).join('');
+  if (selectedServerId && !data.servers.find(s => s.id === selectedServerId)) {
+    selectedServerId = null;
+  }
 }
 
 // ─── Stats ───────────────────────────────────────────────────────────────────
@@ -316,9 +351,10 @@ function toggleSection(el) {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const serverById = id => data.servers.find(s => s.id === id);
-const sourceById = id => data.sources.find(s => s.id === id);
+const sourceById = id => currentServerData.sources.find(s => s.id === id);
 const methodById = id => data.methods.find(m => m.id === id);
 const targetById = id => data.targets.find(t => t.id === id);
+const jobById = id => currentServerData.jobs.find(j => j.id === id);
 
 function badge(text, cls) {
   return `<span class="badge badge-${cls}">${text}</span>`;
@@ -328,15 +364,13 @@ const typeColors = {
   server: { physical: '#1e4080', 'vm-proxmox': '#4a1a80', 'vm-hyperv': '#1a4a1a', container: '#2a3a4a', cloud: '#0a3a4a' },
   source: { database: '#1a3a6a', share: '#3a2a0a', config: '#1a2a3a', 'vm-full': '#3a1a6a', kubernetes: '#1a3a2a', system: '#3a2a2a' },
   target: { nas: '#1a3a4a', 'tape-lto9': '#4a2a0a', 'offsite-rsync': '#0a3a4a', 'backup-server': '#2a1a4a', local: '#2a2a2a', s3: '#0a2a3a' },
-  method: { 'veeam-agent': '#2a4a2a', 'veeam-br': '#3a4a1a', rsync: '#1a2a4a', 'bash-script': '#4a3a1a', pg_dump: '#4a3a1a' },
+  method: { 'veeam-agent': '#2a4a2a', 'veeam-br': '#3a4a1a', rsync: '#1a2a4a', 'bash-script': '#4a3a1a', pg_dump: '#4a3a1a', 'tape-job': '#8B4513' },
 };
 
 function nodeColor(group, type) {
   const map = typeColors[group] || {};
   return map[type] || '#2a3a4a';
 }
-
-// ─── Topology ────────────────────────────────────────────────────────────────
 
 function renderTopology() {
   const nodes = [];
@@ -355,8 +389,7 @@ function renderTopology() {
   });
 
   // Source nodes
-  data.sources.forEach(s => {
-    const srv = serverById(s.server_id);
+  currentServerData.sources.forEach(s => {
     nodes.push({
       id: `src-${s.id}`, label: `${s.name}`,
       title: `Typ: ${s.type}\nPfad: ${s.path||'-'}\n${s.description||''}`,
@@ -365,8 +398,9 @@ function renderTopology() {
       font: { color: '#e2e5f0', size: 11 },
       shape: 'ellipse',
     });
-    // Server → Source
-    edges.push({ from: `srv-${s.server_id}`, to: `src-${s.id}`, color: { color: '#3a4a6a' }, arrows: 'to', width: 1 });
+    if (selectedServerId) {
+      edges.push({ from: `srv-${selectedServerId}`, to: `src-${s.id}`, color: { color: '#3a4a6a' }, arrows: 'to', width: 1 });
+    }
   });
 
   // Method nodes
@@ -400,7 +434,7 @@ function renderTopology() {
   });
 
   // Job edges: source → method → primary_target
-  data.jobs.forEach(j => {
+  currentServerData.jobs.forEach(j => {
     if (j.method_id) {
       edges.push({
         from: `src-${j.source_id}`, to: `mth-${j.method_id}`,
@@ -472,30 +506,24 @@ function renderServers() {
 
 function renderSources() {
   const typeMap = { database: 'db', share: 'share', config: 'config', 'vm-full': 'vm', kubernetes: 'active', system: 'server' };
-  document.getElementById('tbl-sources').innerHTML = data.sources.map(s => {
-    const srv = serverById(s.server_id);
-    return `<tr>
-      <td>${badge(srv ? srv.name : '?', 'server')}</td>
-      <td><strong>${s.name}</strong></td>
-      <td>${badge(s.type, typeMap[s.type] || 'config')}</td>
-      <td class="font-mono text-muted">${s.path || '-'}</td>
-      <td class="text-muted">${s.size_gb ? s.size_gb + ' GB' : '-'}</td>
-      <td class="text-muted">${s.description || ''}</td>
-      <td><button class="btn btn-primary btn-sm" onclick="openModal('source',${s.id})">✏</button>
-          <button class="btn btn-danger btn-sm" onclick="del('sources',${s.id})">✕</button></td>
-    </tr>`;
-  }).join('');
+  document.getElementById('tbl-sources').innerHTML = currentServerData.sources.map(s => `<tr>
+    <td><strong>${s.name}</strong></td>
+    <td>${badge(s.type, typeMap[s.type] || 'config')}</td>
+    <td class="font-mono text-muted">${s.path || '-'}</td>
+    <td class="text-muted">${s.size_gb ? s.size_gb + ' GB' : '-'}</td>
+    <td class="text-muted">${s.description || ''}</td>
+    <td><button class="btn btn-primary btn-sm" onclick="openModal('source',${s.id})">✏</button>
+        <button class="btn btn-danger btn-sm" onclick="del('sources',${s.id})">✕</button></td>
+  </tr>`).join('');
 }
 
 function renderMethods() {
-  const typeColor = { 'veeam-agent': 'active', 'veeam-br': 'active', rsync: 'config', 'bash-script': 'share', pg_dump: 'db' };
+  const typeColor = { 'veeam-agent': 'active', 'veeam-br': 'active', rsync: 'config', 'bash-script': 'share', pg_dump: 'db', 'tape-job': 'tape' };
   document.getElementById('tbl-methods').innerHTML = data.methods.map(m => `
     <tr>
       <td><strong>${m.name}</strong></td>
       <td>${badge(m.type, typeColor[m.type] || 'config')}</td>
       <td class="text-muted">${m.description || ''}</td>
-      <td><button class="btn btn-primary btn-sm" onclick="openModal('method',${m.id})">✏</button>
-          <button class="btn btn-danger btn-sm" onclick="del('methods',${m.id})">✕</button></td>
     </tr>`).join('');
 }
 
@@ -516,9 +544,8 @@ function renderTargets() {
 
 function renderJobs() {
   const statusColor = { active: 'active', paused: 'paused', disabled: 'disabled' };
-  document.getElementById('tbl-jobs').innerHTML = data.jobs.map(j => {
+  document.getElementById('tbl-jobs').innerHTML = currentServerData.jobs.map(j => {
     const src = sourceById(j.source_id);
-    const srv = src ? serverById(src.server_id) : null;
     const mth = methodById(j.method_id);
     const pt = targetById(j.primary_target_id);
     const tiers = `
@@ -529,12 +556,11 @@ function renderJobs() {
       </div>`;
     return `<tr>
       <td><strong>${j.name}</strong>${j.is_encrypted ? ' 🔒' : ''}</td>
-      <td>${srv ? badge(srv.name, 'server') : ''} ${src ? src.name : '?'}</td>
+      <td>${src ? src.name : '?'}</td>
       <td>${mth ? mth.name : '-'}</td>
       <td class="text-muted">${pt ? pt.name : '-'}</td>
       <td>${tiers}</td>
       <td class="text-muted font-mono">${j.schedule || '-'}</td>
-      <td class="text-muted">${j.retention || '-'}</td>
       <td>${badge(j.status, statusColor[j.status] || 'config')}</td>
       <td><button class="btn btn-primary btn-sm" onclick="openModal('job',${j.id})">✏</button>
           <button class="btn btn-danger btn-sm" onclick="del('jobs',${j.id})">✕</button></td>
@@ -546,10 +572,24 @@ function renderJobs() {
 
 async function del(entity, id) {
   if (!confirm('Wirklich löschen?')) return;
-  await fetch(`${API}/${entity}/${id}`, { method: 'DELETE' });
+  
+  if (entity === 'servers') {
+    await fetch(`${API}/servers/${id}`, { method: 'DELETE' });
+  } else if (entity === 'sources') {
+    if (!selectedServerId) { toast('Kein Server ausgewählt', true); return; }
+    await fetch(`${API}/servers/${selectedServerId}/sources/${id}`, { method: 'DELETE' });
+  } else if (entity === 'targets') {
+    await fetch(`${API}/targets/${id}`, { method: 'DELETE' });
+  } else if (entity === 'jobs') {
+    if (!selectedServerId) { toast('Kein Server ausgewählt', true); return; }
+    await fetch(`${API}/servers/${selectedServerId}/jobs/${id}`, { method: 'DELETE' });
+  }
+  
   toast('Gelöscht');
   await loadAll();
+  await loadServerData(selectedServerId);
   renderStats();
+  renderServerSelector();
   renderTables();
   network = null;
 }
@@ -566,7 +606,18 @@ function closeModal() {
 
 function openModal(type, id = null) {
   editType = type; editId = id;
-  const obj = id ? data[typeToCollection(type)].find(x => x.id === id) : null;
+  
+  let obj = null;
+  if (type === 'server') {
+    obj = id ? data.servers.find(x => x.id === id) : null;
+  } else if (type === 'source') {
+    obj = id ? currentServerData.sources.find(x => x.id === id) : null;
+  } else if (type === 'target') {
+    obj = id ? data.targets.find(x => x.id === id) : null;
+  } else if (type === 'job') {
+    obj = id ? currentServerData.jobs.find(x => x.id === id) : null;
+  }
+  
   const content = document.getElementById('modal-content');
 
   if (type === 'server') {
@@ -588,12 +639,13 @@ function openModal(type, id = null) {
         <button class="btn btn-primary" onclick="saveServer()">Speichern</button>
       </div>`;
   } else if (type === 'source') {
+    if (!selectedServerId) {
+      toast('Bitte zuerst einen Server wählen', true);
+      return;
+    }
     content.innerHTML = `
       <h3>${id ? 'Quelle bearbeiten' : 'Neue Backup-Quelle'}</h3>
       <div class="form-grid">
-        <div class="form-full"><label>Server *</label><select id="f-server">
-          ${data.servers.map(s => `<option value="${s.id}" ${obj?.server_id===s.id?'selected':''}>${s.name}</option>`).join('')}
-        </select></div>
         <div><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
         <div><label>Typ</label><select id="f-type">
           ${['database','share','config','vm-full','system','kubernetes'].map(t =>
@@ -606,21 +658,6 @@ function openModal(type, id = null) {
       <div class="modal-actions">
         <button class="btn btn-cancel" onclick="closeModal()">Abbrechen</button>
         <button class="btn btn-primary" onclick="saveSource()">Speichern</button>
-      </div>`;
-  } else if (type === 'method') {
-    content.innerHTML = `
-      <h3>${id ? 'Methode bearbeiten' : 'Neue Backup-Methode'}</h3>
-      <div class="form-grid">
-        <div><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
-        <div><label>Typ</label><select id="f-type">
-          ${['veeam-agent','veeam-br','rsync','bash-script','pg_dump','tar','zabbix-config'].map(t =>
-            `<option value="${t}" ${obj?.type===t?'selected':''}>${t}</option>`).join('')}
-        </select></div>
-        <div class="form-full"><label>Beschreibung</label><textarea id="f-desc">${obj?.description||''}</textarea></div>
-      </div>
-      <div class="modal-actions">
-        <button class="btn btn-cancel" onclick="closeModal()">Abbrechen</button>
-        <button class="btn btn-primary" onclick="saveMethod()">Speichern</button>
       </div>`;
   } else if (type === 'target') {
     content.innerHTML = `
@@ -641,16 +678,17 @@ function openModal(type, id = null) {
         <button class="btn btn-primary" onclick="saveTarget()">Speichern</button>
       </div>`;
   } else if (type === 'job') {
+    if (!selectedServerId) {
+      toast('Bitte zuerst einen Server wählen', true);
+      return;
+    }
     const noSel = '<option value="">– kein –</option>';
     content.innerHTML = `
       <h3>${id ? 'Job bearbeiten' : 'Neuer Backup-Job'}</h3>
       <div class="form-grid">
         <div class="form-full"><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
         <div class="form-full"><label>Quelle *</label><select id="f-source">
-          ${data.sources.map(s => {
-            const srv = serverById(s.server_id);
-            return `<option value="${s.id}" ${obj?.source_id===s.id?'selected':''}>${srv?srv.name+' / ':''} ${s.name}</option>`;
-          }).join('')}
+          ${currentServerData.sources.map(s => `<option value="${s.id}" ${obj?.source_id===s.id?'selected':''}>${s.name}</option>`).join('')}
         </select></div>
         <div><label>Methode</label><select id="f-method">${noSel}
           ${data.methods.map(m => `<option value="${m.id}" ${obj?.method_id===m.id?'selected':''}>${m.name}</option>`).join('')}
@@ -688,10 +726,6 @@ function openModal(type, id = null) {
   document.getElementById('modal-overlay').classList.add('open');
 }
 
-function typeToCollection(type) {
-  return { server: 'servers', source: 'sources', method: 'methods', target: 'targets', job: 'jobs' }[type];
-}
-
 function intOrNull(id) { return id ? parseInt(id) : null; }
 function floatOrNull(id) { return id ? parseFloat(id) : null; }
 function g(id) { return document.getElementById(id); }
@@ -700,39 +734,44 @@ async function saveServer() {
   const body = { name: g('f-name').value, hostname: g('f-hostname').value || null,
     type: g('f-type').value, os: g('f-os').value || null,
     role: g('f-role').value || null, notes: g('f-notes').value || null };
-  await upsert('servers', body);
+  
+  const url = editId ? `${API}/servers/${editId}` : `${API}/servers`;
+  const method = editId ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) { toast('Fehler beim Speichern', true); return; }
+  toast('Gespeichert ✓');
+  closeModal();
+  await loadAll();
+  renderStats();
+  renderServerSelector();
+  renderTables();
+  network = null;
 }
+
 async function saveSource() {
-  const body = { server_id: parseInt(g('f-server').value), name: g('f-name').value,
-    type: g('f-type').value, path: g('f-path').value || null,
-    size_gb: floatOrNull(g('f-size').value), description: g('f-desc').value || null };
-  await upsert('sources', body);
+  const body = { name: g('f-name').value, type: g('f-type').value,
+    path: g('f-path').value || null, size_gb: floatOrNull(g('f-size').value),
+    description: g('f-desc').value || null };
+  
+  const url = editId ? `${API}/servers/${selectedServerId}/sources/${editId}` : `${API}/servers/${selectedServerId}/sources`;
+  const method = editId ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) { toast('Fehler beim Speichern', true); return; }
+  toast('Gespeichert ✓');
+  closeModal();
+  await loadServerData(selectedServerId);
+  await loadAll();
+  renderStats();
+  renderTables();
+  network = null;
 }
-async function saveMethod() {
-  const body = { name: g('f-name').value, type: g('f-type').value, description: g('f-desc').value || null };
-  await upsert('methods', body);
-}
+
 async function saveTarget() {
   const body = { name: g('f-name').value, type: g('f-type').value,
     hostname: g('f-hostname').value || null, path: g('f-path').value || null,
     capacity_tb: floatOrNull(g('f-cap').value), description: g('f-desc').value || null };
-  await upsert('targets', body);
-}
-async function saveJob() {
-  const body = {
-    name: g('f-name').value, source_id: parseInt(g('f-source').value),
-    method_id: intOrNull(g('f-method').value), primary_target_id: intOrNull(g('f-ptarget').value),
-    tape_target_id: intOrNull(g('f-ttarget').value), offsite_target_id: intOrNull(g('f-otarget').value),
-    schedule: g('f-sched').value || null, retention: g('f-ret').value || null,
-    gfs_policy: g('f-gfs').value || null, status: g('f-status').value,
-    is_encrypted: g('f-enc').checked, is_compressed: g('f-comp').checked,
-    notes: g('f-notes').value || null,
-  };
-  await upsert('jobs', body);
-}
-
-async function upsert(entity, body) {
-  const url = editId ? `${API}/${entity}/${editId}` : `${API}/${entity}`;
+  
+  const url = editId ? `${API}/targets/${editId}` : `${API}/targets`;
   const method = editId ? 'PUT' : 'POST';
   const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!r.ok) { toast('Fehler beim Speichern', true); return; }
@@ -744,14 +783,160 @@ async function upsert(entity, body) {
   network = null;
 }
 
+async function saveJob() {
+  const body = {
+    name: g('f-name').value, source_id: parseInt(g('f-source').value),
+    method_id: intOrNull(g('f-method').value), primary_target_id: intOrNull(g('f-ptarget').value),
+    tape_target_id: intOrNull(g('f-ttarget').value), offsite_target_id: intOrNull(g('f-otarget').value),
+    schedule: g('f-sched').value || null, retention: g('f-ret').value || null,
+    gfs_policy: g('f-gfs').value || null, status: g('f-status').value,
+    is_encrypted: g('f-enc').checked, is_compressed: g('f-comp').checked,
+    notes: g('f-notes').value || null,
+  };
+  
+  const url = editId ? `${API}/servers/${selectedServerId}/jobs/${editId}` : `${API}/servers/${selectedServerId}/jobs`;
+  const method = editId ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) { toast('Fehler beim Speichern', true); return; }
+  toast('Gespeichert ✓');
+  closeModal();
+  await loadServerData(selectedServerId);
+  await loadAll();
+  renderStats();
+  renderTables();
+  network = null;
+}
+        <div><label>🟠 Tape-Ziel (2. Tier)</label><select id="f-ttarget">${noSel}
+          ${data.targets.filter(t=>t.type==='tape-lto9').map(t => `<option value="${t.id}" ${obj?.tape_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
+        </select></div>
+        <div><label>🔵 Offsite-Ziel (3. Tier)</label><select id="f-otarget">${noSel}
+          ${data.targets.filter(t=>['offsite-rsync','s3'].includes(t.type)).map(t => `<option value="${t.id}" ${obj?.offsite_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
+        </select></div>
+        <div><label>Zeitplan</label><input id="f-sched" placeholder="täglich 02:00 / 0 2 * * *" value="${obj?.schedule||''}"></div>
+        <div><label>Aufbewahrung</label><input id="f-ret" placeholder="14 Tage" value="${obj?.retention||''}"></div>
+        <div class="form-full"><label>GFS-Policy (Tape)</label><input id="f-gfs" placeholder="7 täglich, 4 wöchentl., 12 monatl." value="${obj?.gfs_policy||''}"></div>
+        <div><label>Status</label><select id="f-status">
+          ${['active','paused','disabled'].map(s => `<option value="${s}" ${obj?.status===s?'selected':''}>${s}</option>`).join('')}
+        </select></div>
+        <div style="display:flex;gap:12px;align-items:center;padding-top:20px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="f-enc" ${obj?.is_encrypted?'checked':''}> Verschlüsselt
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" id="f-comp" ${obj?.is_compressed!==false?'checked':''}> Komprimiert
+          </label>
+        </div>
+        <div class="form-full"><label>Notizen</label><textarea id="f-notes">${obj?.notes||''}</textarea></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-cancel" onclick="closeModal()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="saveJob()">Speichern</button>
+      </div>`;
+  }
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function intOrNull(id) { return id ? parseInt(id) : null; }
+function floatOrNull(id) { return id ? parseFloat(id) : null; }
+function g(id) { return document.getElementById(id); }
+
+async function saveServer() {
+  const body = { name: g('f-name').value, hostname: g('f-hostname').value || null,
+    type: g('f-type').value, os: g('f-os').value || null,
+    role: g('f-role').value || null, notes: g('f-notes').value || null };
+  
+  const url = editId ? `${API}/servers/${editId}` : `${API}/servers`;
+  const method = editId ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) { toast('Fehler beim Speichern', true); return; }
+  toast('Gespeichert ✓');
+  closeModal();
+  await loadAll();
+  renderStats();
+  renderServerSelector();
+  renderTables();
+  network = null;
+}
+
+async function saveSource() {
+  const body = { name: g('f-name').value, type: g('f-type').value,
+    path: g('f-path').value || null, size_gb: floatOrNull(g('f-size').value),
+    description: g('f-desc').value || null };
+  
+  const url = editId ? `${API}/servers/${selectedServerId}/sources/${editId}` : `${API}/servers/${selectedServerId}/sources`;
+  const method = editId ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) { toast('Fehler beim Speichern', true); return; }
+  toast('Gespeichert ✓');
+  closeModal();
+  await loadServerData(selectedServerId);
+  await loadAll();
+  renderStats();
+  renderTables();
+  network = null;
+}
+
+async function saveTarget() {
+  const body = { name: g('f-name').value, type: g('f-type').value,
+    hostname: g('f-hostname').value || null, path: g('f-path').value || null,
+    capacity_tb: floatOrNull(g('f-cap').value), description: g('f-desc').value || null };
+  
+  const url = editId ? `${API}/targets/${editId}` : `${API}/targets`;
+  const method = editId ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) { toast('Fehler beim Speichern', true); return; }
+  toast('Gespeichert ✓');
+  closeModal();
+  await loadAll();
+  renderStats();
+  renderTables();
+  network = null;
+}
+
+async function saveJob() {
+  const body = {
+    name: g('f-name').value, source_id: parseInt(g('f-source').value),
+    method_id: intOrNull(g('f-method').value), primary_target_id: intOrNull(g('f-ptarget').value),
+    tape_target_id: intOrNull(g('f-ttarget').value), offsite_target_id: intOrNull(g('f-otarget').value),
+    schedule: g('f-sched').value || null, retention: g('f-ret').value || null,
+    gfs_policy: g('f-gfs').value || null, status: g('f-status').value,
+    is_encrypted: g('f-enc').checked, is_compressed: g('f-comp').checked,
+    notes: g('f-notes').value || null,
+  };
+  
+  const url = editId ? `${API}/servers/${selectedServerId}/jobs/${editId}` : `${API}/servers/${selectedServerId}/jobs`;
+  const method = editId ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) { toast('Fehler beim Speichern', true); return; }
+  toast('Gespeichert ✓');
+  closeModal();
+  await loadServerData(selectedServerId);
+  await loadAll();
+  renderStats();
+  renderTables();
+  network = null;
+}
+
+// ─── Export/Import ───────────────────────────────────────────────────────────
+
 function exportJSON() {
+  const allSources = [];
+  const allJobs = [];
+  
+  for (const server of data.servers) {
+    const sources = DataStore?.load_server_data?.(server.id, 'sources') || [];
+    const jobs = DataStore?.load_server_data?.(server.id, 'jobs') || [];
+    allSources.push(...sources);
+    allJobs.push(...jobs);
+  }
+  
   const payload = {
     exported_at: new Date().toISOString(),
     servers: data.servers,
-    sources: data.sources,
+    sources: currentServerData.sources,
     methods: data.methods,
     targets: data.targets,
-    jobs: data.jobs,
+    jobs: currentServerData.jobs,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -772,15 +957,8 @@ function importJSON(event) {
   reader.onload = () => {
     try {
       const imported = JSON.parse(reader.result);
-      data.servers = imported.servers || [];
-      data.sources = imported.sources || [];
-      data.methods = imported.methods || [];
-      data.targets = imported.targets || [];
-      data.jobs = imported.jobs || [];
-      renderStats();
-      renderTables();
-      network = null;
-      toast('JSON importiert (temporär im Browser)');
+      // Don't import directly - show message
+      toast('Import: Bitte über API durchführen oder einzeln eintragen', true);
     } catch (err) {
       toast('Import fehlgeschlagen: ungültiges JSON', true);
     }
