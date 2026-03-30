@@ -302,11 +302,14 @@ async function loadServerData(serverId) {
 // ─── Server Selection ─────────────────────────────────────────────────────────
 
 async function selectServer(serverId) {
+  console.log('selectServer called with:', serverId);
   selectedServerId = serverId ? parseInt(serverId) : null;
+  console.log('selectedServerId set to:', selectedServerId);
   await loadServerData(selectedServerId);
   document.getElementById('sources-section').style.display = selectedServerId ? 'block' : 'none';
   document.getElementById('jobs-section').style.display = selectedServerId ? 'block' : 'none';
   renderTables();
+  console.log('Sections visibility updated');
 }
 
 function renderServerSelector() {
