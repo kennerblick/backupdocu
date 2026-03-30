@@ -266,7 +266,7 @@ textarea { resize: vertical; min-height: 60px; }
 <div class="toast" id="toast"></div>
 
 <script>
-const API = '/api';
+const API = 'http://localhost:8000';
 let data = { servers: [], methods: [], targets: [] };
 let currentServerData = { sources: [], jobs: [] };
 let selectedServerId = null;
@@ -361,11 +361,13 @@ function renderStats() {
 
 // ─── View Switching ──────────────────────────────────────────────────────────
 
-function switchView(view) {
+function switchView(view, event = null) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   document.getElementById(`view-${view}`).classList.add('active');
-  event.target.classList.add('active');
+  if (event && event.target) {
+    event.target.classList.add('active');
+  }
   if (view === 'topology' && !network) renderTopology();
   else if (view === 'topology') network.fit();
   else if (view === 'servers') renderServers();
@@ -383,72 +385,39 @@ async function renderTree() {
     // Load all server data
     const allServerData = [];
     for (const server of data.servers) {
-      const [sources, jobs] = await Promise.all([
-        fetch(`${API}/servers/${server.id}/sources`).then(r => r.json()).catch(() => []),
-        fetch(`${API}/servers/${server.id}/jobs`).then(r => r.json()).catch(() => [])
-      ]);
-      allServerData.push({ server, sources, jobs });
+      const sources = await fetch(`${API}/servers/${server.id}/sources`).then(r => r.json()).catch(() => []);
+      // Only include servers that have sources
+      if (sources.length > 0) {
+        allServerData.push({ server, sources });
+      }
     }
 
     // Build tree HTML
     let html = '';
-    for (const { server, sources, jobs } of allServerData) {
+    for (const { server, sources } of allServerData) {
       const serverIcon = server.type === 'physical' ? '🖥' : server.type === 'vm-proxmox' ? '📦' : server.type === 'vm-hyperv' ? '🖱' : '☁';
       html += `
         <div class="tree-node server" onclick="editFromTree('server', null, ${server.id})" style="cursor: pointer;">
-          <span class="tree-toggle" onclick="toggleTreeNode(this); event.stopPropagation()">▶</span>
+          <span class="tree-toggle" onclick="toggleTreeNode(this); event.stopPropagation()">+</span>
           <span class="tree-content">${serverIcon} ${server.name}</span>
-          <span class="tree-stats">${sources.length} Quellen, ${jobs.length} Jobs</span>
+          <span class="tree-stats">${sources.length} Quellen</span>
           <div class="tree-children" style="display: none;">
       `;
 
-      // Sources
-      if (sources.length > 0) {
+      // Sources directly (no intermediate "Backup-Quellen" node)
+      for (const source of sources) {
+        const typeIcon = source.type === 'database' ? '🗄' : source.type === 'share' ? '📁' : source.type === 'config' ? '⚙' : '📄';
         html += `
-          <div class="tree-node">
-            <span class="tree-toggle" onclick="toggleTreeNode(this)">▶</span>
-            <span class="tree-content">📦 Backup-Quellen</span>
-            <span class="tree-stats">${sources.length}</span>
-            <div class="tree-children" style="display: none;">
+          <div class="tree-node source" onclick="editFromTree('source', ${server.id}, ${source.id}); event.stopPropagation()" style="cursor: pointer; margin-left: 20px;">
+            <span class="tree-content">${typeIcon} ${source.name}</span>
+          </div>
         `;
-        for (const source of sources) {
-          const typeIcon = source.type === 'database' ? '🗄' : source.type === 'share' ? '📁' : source.type === 'config' ? '⚙' : '📄';
-          html += `
-            <div class="tree-node source" onclick="editFromTree('source', ${server.id}, ${source.id})" style="cursor: pointer;">
-              <span class="tree-content">${typeIcon} ${source.name}</span>
-            </div>
-          `;
-        }
-        html += `</div></div>`;
-      }
-
-      // Jobs
-      if (jobs.length > 0) {
-        html += `
-          <div class="tree-node">
-            <span class="tree-toggle" onclick="toggleTreeNode(this)">▶</span>
-            <span class="tree-content">🔄 Backup-Jobs</span>
-            <span class="tree-stats">${jobs.length}</span>
-            <div class="tree-children" style="display: none;">
-        `;
-        for (const job of jobs) {
-          const source = sources.find(s => s.id === job.source_id);
-          const method = data.methods.find(m => m.id === job.method_id);
-          const statusIcon = job.status === 'active' ? '🟢' : job.status === 'paused' ? '🟡' : '🔴';
-          html += `
-            <div class="tree-node job" onclick="editFromTree('job', ${server.id}, ${job.id})" style="cursor: pointer;">
-              <span class="tree-content">${statusIcon} ${job.name}</span>
-              <span class="tree-stats">${source ? source.name : '?'} → ${method ? method.name : '?'}</span>
-            </div>
-          `;
-        }
-        html += `</div></div>`;
       }
 
       html += `</div></div>`;
     }
 
-    container.innerHTML = html || '<div style="text-align: center; color: var(--text2); padding: 40px;">Keine Server gefunden</div>';
+    container.innerHTML = html || '<div style="text-align: center; color: var(--text2); padding: 40px;">Keine Server mit Quellen gefunden</div>';
 
   } catch (error) {
     container.innerHTML = '<div style="text-align: center; color: var(--red); padding: 40px;">Fehler beim Laden der Daten</div>';
@@ -462,10 +431,10 @@ function toggleTreeNode(element) {
   
   if (isExpanded) {
     children.style.display = 'none';
-    element.textContent = '▶';
+    element.textContent = '+';
   } else {
     children.style.display = 'block';
-    element.textContent = '▼';
+    element.textContent = '-';
   }
 }
 
