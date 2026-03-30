@@ -304,9 +304,9 @@ async function loadServerData(serverId) {
 async function selectServer(serverId) {
   selectedServerId = serverId ? parseInt(serverId) : null;
   await loadServerData(selectedServerId);
-  renderTables();
   document.getElementById('sources-section').style.display = selectedServerId ? 'block' : 'none';
   document.getElementById('jobs-section').style.display = selectedServerId ? 'block' : 'none';
+  renderTables();
 }
 
 function renderServerSelector() {
