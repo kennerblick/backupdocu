@@ -273,8 +273,12 @@ async function init() {
   renderStats();
   renderServerSelector();
   // Initially hide server-specific sections
-  document.getElementById('sources-section').style.display = 'none';
-  document.getElementById('jobs-section').style.display = 'none';
+  const sourcesSection = document.getElementById('sources-section');
+  const jobsSection = document.getElementById('jobs-section');
+  sourcesSection.style.display = 'none';
+  jobsSection.style.display = 'none';
+  sourcesSection.classList.add('collapsed');
+  jobsSection.classList.add('collapsed');
   renderTables();
   renderTopology();
 }
@@ -306,8 +310,22 @@ async function loadServerData(serverId) {
 async function selectServer(serverId) {
   selectedServerId = serverId ? parseInt(serverId) : null;
   await loadServerData(selectedServerId);
-  document.getElementById('sources-section').style.display = selectedServerId ? 'block' : 'none';
-  document.getElementById('jobs-section').style.display = selectedServerId ? 'block' : 'none';
+  
+  const sourcesSection = document.getElementById('sources-section');
+  const jobsSection = document.getElementById('jobs-section');
+  
+  if (selectedServerId) {
+    sourcesSection.style.display = 'block';
+    jobsSection.style.display = 'block';
+    sourcesSection.classList.remove('collapsed');
+    jobsSection.classList.remove('collapsed');
+  } else {
+    sourcesSection.style.display = 'none';
+    jobsSection.style.display = 'none';
+    sourcesSection.classList.add('collapsed');
+    jobsSection.classList.add('collapsed');
+  }
+  
   renderTables();
 }
 
