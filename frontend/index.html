@@ -105,8 +105,15 @@ textarea { resize: vertical; min-height: 60px; }
 .toast.error { background: var(--red); }
 .toast.show { opacity: 1; }
 
-.text-muted { color: var(--text2); font-size: 12px; }
-.font-mono { font-family: 'Consolas', monospace; font-size: 12px; }
+/* Tree View */
+.tree-node { margin: 4px 0; user-select: none; }
+.tree-node.server { font-weight: 600; color: var(--accent); }
+.tree-node.source { padding-left: 24px; color: var(--text); }
+.tree-node.job { padding-left: 48px; color: var(--text2); font-size: 13px; }
+.tree-toggle { cursor: pointer; display: inline-block; width: 16px; height: 16px; margin-right: 8px; text-align: center; line-height: 16px; border-radius: 3px; background: var(--bg3); color: var(--text2); font-size: 10px; }
+.tree-toggle:hover { background: var(--border); }
+.tree-content { display: inline; }
+.tree-stats { display: inline-block; margin-left: 12px; font-size: 11px; color: var(--text2); background: var(--bg3); padding: 2px 6px; border-radius: 10px; }
 </style>
 </head>
 <body>
@@ -117,6 +124,7 @@ textarea { resize: vertical; min-height: 60px; }
   <div class="nav-tabs">
     <button class="nav-tab active" onclick="switchView('topology')">🗺 Topologie</button>
     <button class="nav-tab" onclick="switchView('servers')">🖥 Server</button>
+    <button class="nav-tab" onclick="switchView('tree')">🌳 Baum</button>
     <button class="nav-tab" onclick="switchView('table')">📋 Backups</button>
   </div>
   <div style="margin-left: 16px; display: flex; gap: 8px;">
@@ -170,6 +178,16 @@ textarea { resize: vertical; min-height: 60px; }
           <thead><tr><th>Name</th><th>Hostname</th><th>Typ</th><th>OS</th><th>Rolle</th><th>Notizen</th><th></th></tr></thead>
           <tbody id="tbl-servers"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tree View -->
+  <div class="view" id="view-tree">
+    <div style="padding: 20px; gap: 12px; display: flex; flex-direction: column;">
+      <h2 style="margin: 0 0 16px 0; color: var(--accent);">Backup-Hierarchie</h2>
+      <div id="tree-container" style="background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
+        <!-- Tree structure will be rendered here -->
       </div>
     </div>
   </div>
@@ -351,13 +369,104 @@ function switchView(view) {
   if (view === 'topology' && !network) renderTopology();
   else if (view === 'topology') network.fit();
   else if (view === 'servers') renderServers();
+  else if (view === 'tree') renderTree();
   else if (view === 'table') renderTables();
 }
 
-// ─── Accordion ────────────────────────────────────────────────────────────────
+// ─── Tree View ─────────────────────────────────────────────────────────────
 
-function toggleSection(el) {
-  el.classList.toggle('collapsed');
+async function renderTree() {
+  const container = document.getElementById('tree-container');
+  container.innerHTML = '<div style="text-align: center; color: var(--text2); padding: 40px;">Lade...</div>';
+
+  try {
+    // Load all server data
+    const allServerData = [];
+    for (const server of data.servers) {
+      const [sources, jobs] = await Promise.all([
+        fetch(`${API}/servers/${server.id}/sources`).then(r => r.json()).catch(() => []),
+        fetch(`${API}/servers/${server.id}/jobs`).then(r => r.json()).catch(() => [])
+      ]);
+      allServerData.push({ server, sources, jobs });
+    }
+
+    // Build tree HTML
+    let html = '';
+    for (const { server, sources, jobs } of allServerData) {
+      const serverIcon = server.type === 'physical' ? '🖥' : server.type === 'vm-proxmox' ? '📦' : server.type === 'vm-hyperv' ? '🖱' : '☁';
+      html += `
+        <div class="tree-node server">
+          <span class="tree-toggle" onclick="toggleTreeNode(this)">▶</span>
+          <span class="tree-content">${serverIcon} ${server.name}</span>
+          <span class="tree-stats">${sources.length} Quellen, ${jobs.length} Jobs</span>
+          <div class="tree-children" style="display: none;">
+      `;
+
+      // Sources
+      if (sources.length > 0) {
+        html += `
+          <div class="tree-node">
+            <span class="tree-toggle" onclick="toggleTreeNode(this)">▶</span>
+            <span class="tree-content">📦 Backup-Quellen</span>
+            <span class="tree-stats">${sources.length}</span>
+            <div class="tree-children" style="display: none;">
+        `;
+        for (const source of sources) {
+          const typeIcon = source.type === 'database' ? '🗄' : source.type === 'share' ? '📁' : source.type === 'config' ? '⚙' : '📄';
+          html += `
+            <div class="tree-node source">
+              <span class="tree-content">${typeIcon} ${source.name}</span>
+            </div>
+          `;
+        }
+        html += `</div></div>`;
+      }
+
+      // Jobs
+      if (jobs.length > 0) {
+        html += `
+          <div class="tree-node">
+            <span class="tree-toggle" onclick="toggleTreeNode(this)">▶</span>
+            <span class="tree-content">🔄 Backup-Jobs</span>
+            <span class="tree-stats">${jobs.length}</span>
+            <div class="tree-children" style="display: none;">
+        `;
+        for (const job of jobs) {
+          const source = sources.find(s => s.id === job.source_id);
+          const method = data.methods.find(m => m.id === job.method_id);
+          const statusIcon = job.status === 'active' ? '🟢' : job.status === 'paused' ? '🟡' : '🔴';
+          html += `
+            <div class="tree-node job">
+              <span class="tree-content">${statusIcon} ${job.name}</span>
+              <span class="tree-stats">${source ? source.name : '?'} → ${method ? method.name : '?'}</span>
+            </div>
+          `;
+        }
+        html += `</div></div>`;
+      }
+
+      html += `</div></div>`;
+    }
+
+    container.innerHTML = html || '<div style="text-align: center; color: var(--text2); padding: 40px;">Keine Server gefunden</div>';
+
+  } catch (error) {
+    container.innerHTML = '<div style="text-align: center; color: var(--red); padding: 40px;">Fehler beim Laden der Daten</div>';
+    console.error('Tree render error:', error);
+  }
+}
+
+function toggleTreeNode(element) {
+  const children = element.parentElement.querySelector('.tree-children');
+  const isExpanded = children.style.display !== 'none';
+  
+  if (isExpanded) {
+    children.style.display = 'none';
+    element.textContent = '▶';
+  } else {
+    children.style.display = 'block';
+    element.textContent = '▼';
+  }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
