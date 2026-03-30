@@ -395,8 +395,8 @@ async function renderTree() {
     for (const { server, sources, jobs } of allServerData) {
       const serverIcon = server.type === 'physical' ? '🖥' : server.type === 'vm-proxmox' ? '📦' : server.type === 'vm-hyperv' ? '🖱' : '☁';
       html += `
-        <div class="tree-node server">
-          <span class="tree-toggle" onclick="toggleTreeNode(this)">▶</span>
+        <div class="tree-node server" onclick="editFromTree('server', null, ${server.id})" style="cursor: pointer;">
+          <span class="tree-toggle" onclick="toggleTreeNode(this); event.stopPropagation()">▶</span>
           <span class="tree-content">${serverIcon} ${server.name}</span>
           <span class="tree-stats">${sources.length} Quellen, ${jobs.length} Jobs</span>
           <div class="tree-children" style="display: none;">
@@ -414,7 +414,7 @@ async function renderTree() {
         for (const source of sources) {
           const typeIcon = source.type === 'database' ? '🗄' : source.type === 'share' ? '📁' : source.type === 'config' ? '⚙' : '📄';
           html += `
-            <div class="tree-node source">
+            <div class="tree-node source" onclick="editFromTree('source', ${server.id}, ${source.id})" style="cursor: pointer;">
               <span class="tree-content">${typeIcon} ${source.name}</span>
             </div>
           `;
@@ -436,7 +436,7 @@ async function renderTree() {
           const method = data.methods.find(m => m.id === job.method_id);
           const statusIcon = job.status === 'active' ? '🟢' : job.status === 'paused' ? '🟡' : '🔴';
           html += `
-            <div class="tree-node job">
+            <div class="tree-node job" onclick="editFromTree('job', ${server.id}, ${job.id})" style="cursor: pointer;">
               <span class="tree-content">${statusIcon} ${job.name}</span>
               <span class="tree-stats">${source ? source.name : '?'} → ${method ? method.name : '?'}</span>
             </div>
@@ -466,6 +466,41 @@ function toggleTreeNode(element) {
   } else {
     children.style.display = 'block';
     element.textContent = '▼';
+  }
+}
+
+async function editFromTree(type, serverId, itemId) {
+  if (type === 'server') {
+    // Server edit
+    openModal('server', itemId);
+  } else if (type === 'source') {
+    // Source edit - need to select server first
+    selectedServerId = serverId;
+    renderServerSelector();
+    document.getElementById('server-selector').value = serverId;
+    await loadServerData(serverId);
+    renderTables();
+    document.getElementById('sources-section').style.display = 'block';
+    document.getElementById('sources-section').classList.remove('collapsed');
+    document.getElementById('jobs-section').style.display = 'block';
+    document.getElementById('jobs-section').classList.remove('collapsed');
+    // Switch to table view and open modal
+    switchView('table');
+    openModal('source', itemId);
+  } else if (type === 'job') {
+    // Job edit - need to select server first
+    selectedServerId = serverId;
+    renderServerSelector();
+    document.getElementById('server-selector').value = serverId;
+    await loadServerData(serverId);
+    renderTables();
+    document.getElementById('sources-section').style.display = 'block';
+    document.getElementById('sources-section').classList.remove('collapsed');
+    document.getElementById('jobs-section').style.display = 'block';
+    document.getElementById('jobs-section').classList.remove('collapsed');
+    // Switch to table view and open modal
+    switchView('table');
+    openModal('job', itemId);
   }
 }
 
