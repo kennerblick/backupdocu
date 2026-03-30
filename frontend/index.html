@@ -182,8 +182,7 @@ textarea { resize: vertical; min-height: 60px; }
       </table>
     </div>
 
-    <!-- Backup Sources (Server-spezifisch) -->
-    <div class="section collapsed" onclick="toggleSection(this)" id="sources-section" style="display:none;">
+    <div class="section collapsed" onclick="toggleSection(this)" id="sources-section">
       <div class="section-header">
         <div style="display:flex;align-items:center">
           <span class="chevron">▼</span>
@@ -231,7 +230,7 @@ textarea { resize: vertical; min-height: 60px; }
     </div>
 
     <!-- Backup Jobs (Server-spezifisch) -->
-    <div class="section collapsed" onclick="toggleSection(this)" id="jobs-section" style="display:none;">
+    <div class="section collapsed" onclick="toggleSection(this)" id="jobs-section">
       <div class="section-header">
         <div style="display:flex;align-items:center">
           <span class="chevron">▼</span>
@@ -273,6 +272,9 @@ async function init() {
   await loadAll();
   renderStats();
   renderServerSelector();
+  // Initially hide server-specific sections
+  document.getElementById('sources-section').style.display = 'none';
+  document.getElementById('jobs-section').style.display = 'none';
   renderTables();
   renderTopology();
 }
@@ -302,14 +304,11 @@ async function loadServerData(serverId) {
 // ─── Server Selection ─────────────────────────────────────────────────────────
 
 async function selectServer(serverId) {
-  console.log('selectServer called with:', serverId);
   selectedServerId = serverId ? parseInt(serverId) : null;
-  console.log('selectedServerId set to:', selectedServerId);
   await loadServerData(selectedServerId);
   document.getElementById('sources-section').style.display = selectedServerId ? 'block' : 'none';
   document.getElementById('jobs-section').style.display = selectedServerId ? 'block' : 'none';
   renderTables();
-  console.log('Sections visibility updated');
 }
 
 function renderServerSelector() {
