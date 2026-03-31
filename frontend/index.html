@@ -169,7 +169,7 @@ textarea { resize: vertical; min-height: 60px; }
 
   <!-- Server View -->
   <div class="view" id="view-servers">
-    <div style="padding: 20px; gap: 12px; display: flex; flex-direction: column;">
+    <div style="padding: 20px; gap: 12px; display: flex; flex-direction: column; height: 100%; min-height: 0;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h2 style="margin: 0; color: var(--accent);">Server-Verwaltung</h2>
         <div style="display:flex;gap:8px;align-items:center;">
@@ -181,7 +181,7 @@ textarea { resize: vertical; min-height: 60px; }
         </div>
       </div>
       
-      <div class="section">
+      <div class="section" style="flex: 1; min-height: 0; overflow-y: auto;">
         <table>
           <thead><tr><th>Name</th><th>Hostname</th><th>Typ</th><th>OS</th><th>Rolle</th><th>Funktionen</th><th>Standort</th><th></th></tr></thead>
           <tbody id="tbl-servers"></tbody>
