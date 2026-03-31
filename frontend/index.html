@@ -523,12 +523,20 @@ function nodeColor(group, type) {
   return map[type] || '#2a3a4a';
 }
 
-function renderTopology() {
+async function renderTopology() {
   const container = document.getElementById('network-container');
   if (!(window.vis && vis.Network)) {
     container.innerHTML = '<div style="padding:24px;color:var(--red);">Topologie kann nicht geladen werden (vis-network nicht verfuegbar).</div>';
     return;
   }
+
+  container.innerHTML = '<div style="padding:24px;color:var(--text2);">Topologie wird geladen...</div>';
+
+  const topologyData = await Promise.all(data.servers.map(async server => ({
+    server,
+    sources: await apiGetJson(`${API}/servers/${server.id}/sources`, []),
+    jobs: await apiGetJson(`${API}/servers/${server.id}/jobs`, []),
+  })));
 
   const nodes = [];
   const edges = [];
@@ -545,19 +553,42 @@ function renderTopology() {
     });
   });
 
-  // Source nodes
-  currentServerData.sources.forEach(s => {
-    nodes.push({
-      id: `src-${s.id}`, label: `${s.name}`,
-      title: `Typ: ${s.type}\nPfad: ${s.path||'-'}\n${s.description||''}`,
-      group: 'source',
-      color: { background: nodeColor('source', s.type), border: '#4a6a9a' },
-      font: { color: '#e2e5f0', size: 11 },
-      shape: 'ellipse',
+  // Source and job nodes per server
+  topologyData.forEach(({ server, sources, jobs }) => {
+    sources.forEach(s => {
+      nodes.push({
+        id: `src-${server.id}-${s.id}`, label: s.name,
+        title: `Server: ${server.name}\nTyp: ${s.type}\nPfad: ${s.path || '-'}\n${s.description || ''}`,
+        group: 'source',
+        color: { background: nodeColor('source', s.type), border: '#4a6a9a' },
+        font: { color: '#e2e5f0', size: 11 },
+        shape: 'ellipse',
+      });
+      edges.push({ from: `srv-${server.id}`, to: `src-${server.id}-${s.id}`, color: { color: '#3a4a6a' }, arrows: 'to', width: 1 });
     });
-    if (selectedServerId) {
-      edges.push({ from: `srv-${selectedServerId}`, to: `src-${s.id}`, color: { color: '#3a4a6a' }, arrows: 'to', width: 1 });
-    }
+
+    jobs.forEach(j => {
+      nodes.push({
+        id: `job-${server.id}-${j.id}`,
+        label: j.name,
+        title: `Server: ${server.name}\nZeitplan: ${j.schedule || '-'}\nStatus: ${j.status || '-'}\n${j.notes || ''}`,
+        group: 'job',
+        color: { background: '#263245', border: '#5c7aa1' },
+        font: { color: '#e2e5f0', size: 11 },
+        shape: 'box',
+        margin: 6,
+      });
+
+      if (j.source_id) {
+        edges.push({
+          from: `src-${server.id}-${j.source_id}`,
+          to: `job-${server.id}-${j.id}`,
+          color: { color: '#4a6a8a' },
+          arrows: 'to',
+          width: 2,
+        });
+      }
+    });
   });
 
   // Method nodes
@@ -590,18 +621,18 @@ function renderTopology() {
     });
   });
 
-  // Job edges: source → method → primary_target
-  currentServerData.jobs.forEach(j => {
+  // Job edges: source → job → method → primary_target
+  topologyData.forEach(({ server, jobs }) => jobs.forEach(j => {
     if (j.method_id) {
       edges.push({
-        from: `src-${j.source_id}`, to: `mth-${j.method_id}`,
+        from: `job-${server.id}-${j.id}`, to: `mth-${j.method_id}`,
         label: j.schedule || '',
         color: { color: '#4a7a4a' }, arrows: 'to', width: 2,
         font: { color: '#8b92a8', size: 10, align: 'middle' },
       });
     }
     if (j.primary_target_id) {
-      const from = j.method_id ? `mth-${j.method_id}` : `src-${j.source_id}`;
+      const from = j.method_id ? `mth-${j.method_id}` : `job-${server.id}-${j.id}`;
       edges.push({
         from, to: `tgt-${j.primary_target_id}`,
         color: { color: '#4a7a4a' }, arrows: 'to', width: 2,
@@ -623,7 +654,7 @@ function renderTopology() {
         font: { color: '#06b6d4', size: 10 },
       });
     }
-  });
+  }));
 
   const options = {
     layout: { hierarchical: { enabled: true, direction: 'LR', sortMethod: 'directed', levelSeparation: 220, nodeSpacing: 100 } },
@@ -633,6 +664,10 @@ function renderTopology() {
     nodes: { borderWidth: 1, shadow: { enabled: true, size: 6 } },
   };
   try {
+    if (network) {
+      network.destroy();
+      network = null;
+    }
     network = new vis.Network(container, { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) }, options);
   } catch (err) {
     container.innerHTML = '<div style="padding:24px;color:var(--red);">Topologie konnte nicht gerendert werden.</div>';
