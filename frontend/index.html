@@ -274,7 +274,7 @@ textarea { resize: vertical; min-height: 60px; }
 
 <script>
 const API = '/api';
-let data = { servers: [], methods: [], targets: [], serverLocations: [] };
+let data = { servers: [], methods: [], targets: [], backupTypes: [], serverLocations: [] };
 let currentServerData = { sources: [], jobs: [] };
 let selectedServerId = null;
 let network = null;
@@ -310,15 +310,23 @@ async function init() {
 }
 
 async function loadAll() {
-  const [servers, methods, targets, stats, serverFunctions, serverLocations] = await Promise.all([
+  const [servers, methods, targets, backupTypes, stats, serverFunctions, serverLocations] = await Promise.all([
     apiGetJson(`${API}/servers`, []),
     apiGetJson(`${API}/methods`, []),
     apiGetJson(`${API}/targets`, []),
+    apiGetJson(`${API}/backup-types`, [
+      { id: 1, name: 'NAS', type: 'nas' },
+      { id: 2, name: 'Backup-Server', type: 'backup-server' },
+      { id: 3, name: 'Tape (LTO-9)', type: 'tape-lto9' },
+      { id: 4, name: 'Offsite rsync', type: 'offsite-rsync' },
+      { id: 5, name: 'Local', type: 'local' },
+      { id: 6, name: 'S3', type: 's3' },
+    ]),
     apiGetJson(`${API}/stats`, {}),
     apiGetJson(`${API}/server-functions`, []),
     apiGetJson(`${API}/server-locations`, []),
   ]);
-  data = { servers, methods, targets, stats, serverFunctions, serverLocations };
+  data = { servers, methods, targets, backupTypes, stats, serverFunctions, serverLocations };
 }
 
 async function loadServerData(serverId) {
@@ -1081,12 +1089,13 @@ function openModal(type, id = null) {
         <button class="btn btn-primary" onclick="saveSource()">Speichern</button>
       </div>`;
   } else if (type === 'target') {
+    const targetTypes = (data.backupTypes || []).map(t => t.type);
     content.innerHTML = `
       <h3>${id ? 'Ziel bearbeiten' : 'Neues Backup-Ziel'}</h3>
       <div class="form-grid">
         <div><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
         <div><label>Typ</label><select id="f-type">
-          ${['nas','backup-server','tape-lto9','offsite-rsync','local','s3'].map(t =>
+          ${(targetTypes.length ? targetTypes : ['nas','backup-server','tape-lto9','offsite-rsync','local','s3']).map(t =>
             `<option value="${t}" ${obj?.type===t?'selected':''}>${t}</option>`).join('')}
         </select></div>
         <div><label>Hostname</label><input id="f-hostname" value="${obj?.hostname||''}"></div>

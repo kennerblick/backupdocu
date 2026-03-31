@@ -13,15 +13,20 @@ import shutil
 
 DATA_DIR = Path(__file__).parent / 'data'
 DATA_DIR.mkdir(exist_ok=True)
+CONFIG_DIR = Path(__file__).parent / 'config-data'
+CONFIG_DIR.mkdir(exist_ok=True)
 SERVERS_DIR = DATA_DIR / 'servers'
 SERVERS_DIR.mkdir(exist_ok=True)
+LEGACY_METHODS_FILE = DATA_DIR / 'methods.json'
 
 GLOBAL_FILES = {
     'servers': DATA_DIR / 'servers.json',
-    'methods': DATA_DIR / 'methods.json',
+    'methods': CONFIG_DIR / 'backup-methods.json',
     'targets': DATA_DIR / 'targets.json',
     'settings': DATA_DIR / 'settings.json',
 }
+
+BACKUP_TYPES_FILE = CONFIG_DIR / 'backup-types.json'
 
 DEFAULT_SERVER_LOCATIONS = [
     {'id': 1, 'name': 'extern'},
@@ -34,6 +39,9 @@ DEFAULT_SERVER_LOCATIONS = [
 for name, path in GLOBAL_FILES.items():
     if not path.exists():
         if name == 'methods':
+            if LEGACY_METHODS_FILE.exists():
+                path.write_text(LEGACY_METHODS_FILE.read_text(encoding='utf-8'), encoding='utf-8')
+                continue
             path.write_text(json.dumps([
                 {'id': 1, 'name': 'Veeam Agent', 'type': 'veeam-agent', 'description': 'Veeam Agent für Linux/Windows'},
                 {'id': 2, 'name': 'Veeam Backup & Replication', 'type': 'veeam-br', 'description': 'Veeam Backup & Replication'},
@@ -50,6 +58,16 @@ for name, path in GLOBAL_FILES.items():
             }, indent=2, ensure_ascii=False), encoding='utf-8')
         else:
             path.write_text('[]', encoding='utf-8')
+
+if not BACKUP_TYPES_FILE.exists():
+    BACKUP_TYPES_FILE.write_text(json.dumps([
+        {'id': 1, 'name': 'NAS', 'type': 'nas'},
+        {'id': 2, 'name': 'Backup-Server', 'type': 'backup-server'},
+        {'id': 3, 'name': 'Tape (LTO-9)', 'type': 'tape-lto9'},
+        {'id': 4, 'name': 'Offsite rsync', 'type': 'offsite-rsync'},
+        {'id': 5, 'name': 'Local', 'type': 'local'},
+        {'id': 6, 'name': 'S3', 'type': 's3'},
+    ], indent=2, ensure_ascii=False), encoding='utf-8')
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -369,6 +387,14 @@ def delete_server_endpoint(server_id: int):
 @app.get('/api/methods')
 def list_methods():
     return DataStore.load_global('methods')
+
+
+@app.get('/api/backup-types')
+def list_backup_types():
+    try:
+        return json.loads(BACKUP_TYPES_FILE.read_text(encoding='utf-8'))
+    except (json.JSONDecodeError, FileNotFoundError):
+        return []
 
 
 @app.get('/api/methods/{method_id}')

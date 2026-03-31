@@ -1,0 +1,38 @@
+[
+  {
+    "id": 1,
+    "name": "Veeam Agent",
+    "type": "veeam-agent",
+    "description": "Veeam Agent fuer Linux/Windows"
+  },
+  {
+    "id": 2,
+    "name": "Veeam Backup & Replication",
+    "type": "veeam-br",
+    "description": "Veeam Backup & Replication"
+  },
+  {
+    "id": 3,
+    "name": "rsync",
+    "type": "rsync",
+    "description": "rsync Backup"
+  },
+  {
+    "id": 4,
+    "name": "Bash Script",
+    "type": "bash-script",
+    "description": "Benutzerdefiniertes Bash-Skript"
+  },
+  {
+    "id": 5,
+    "name": "pg_dump",
+    "type": "pg_dump",
+    "description": "PostgreSQL Dump"
+  },
+  {
+    "id": 6,
+    "name": "Tape Job",
+    "type": "tape-job",
+    "description": "Tape Sicherung"
+  }
+]

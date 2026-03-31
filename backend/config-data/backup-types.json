@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "name": "NAS",
+    "type": "nas"
+  },
+  {
+    "id": 2,
+    "name": "Backup-Server",
+    "type": "backup-server"
+  },
+  {
+    "id": 3,
+    "name": "Tape (LTO-9)",
+    "type": "tape-lto9"
+  },
+  {
+    "id": 4,
+    "name": "Offsite rsync",
+    "type": "offsite-rsync"
+  },
+  {
+    "id": 5,
+    "name": "Local",
+    "type": "local"
+  },
+  {
+    "id": 6,
+    "name": "S3",
+    "type": "s3"
+  }
+]
