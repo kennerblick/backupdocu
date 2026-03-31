@@ -125,7 +125,8 @@ textarea { resize: vertical; min-height: 60px; }
     <button class="nav-tab active" onclick="switchView('topology')">🗺 Topologie</button>
     <button class="nav-tab" onclick="switchView('servers')">🖥 Server</button>
     <button class="nav-tab" onclick="switchView('tree')">🌳 Baum</button>
-    <button class="nav-tab" onclick="switchView('table')">📋 Backups</button>
+    <button class="nav-tab" onclick="switchView('targets')">🗄 Targets</button>
+    <button class="nav-tab" onclick="switchView('table')">📋 Backup-Flow</button>
   </div>
   <div style="margin-left: 16px; display: flex; gap: 8px;">
     <button class="btn btn-primary btn-sm" onclick="exportJSON()">📤 Export JSON</button>
@@ -198,7 +199,23 @@ textarea { resize: vertical; min-height: 60px; }
     </div>
   </div>
 
-  <!-- Table View -->
+  <!-- Targets View -->
+  <div class="view" id="view-targets">
+    <div style="padding: 20px; gap: 12px; display: flex; flex-direction: column;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 style="margin: 0; color: var(--accent);">Targets</h2>
+        <button class="btn btn-primary" onclick="openModal('target')">+ Neues Ziel</button>
+      </div>
+      <div class="section">
+        <table>
+          <thead><tr><th>Name</th><th>Typ</th><th>Host</th><th>Pfad</th><th>Kapazität</th><th>Beschreibung</th><th></th></tr></thead>
+          <tbody id="tbl-targets"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backup-Flow View -->
   <div class="view" id="view-table">
 
     <!-- Server Selector -->
@@ -223,23 +240,6 @@ textarea { resize: vertical; min-height: 60px; }
       <table>
         <thead><tr><th>Name</th><th>Typ</th><th>Pfad</th><th>Größe</th><th>Beschreibung</th><th></th></tr></thead>
         <tbody id="tbl-sources"></tbody>
-      </table>
-    </div>
-
-    <!-- Backup Targets -->
-    <div class="section collapsed" onclick="toggleSection(this)">
-      <div class="section-header">
-        <div style="display:flex;align-items:center">
-          <span class="chevron">▼</span>
-          <h2>🗄 Backup-Ziele</h2>
-        </div>
-        <div class="section-content" onclick="event.stopPropagation()">
-          <button class="btn btn-primary" onclick="openModal('target')">+ Ziel</button>
-        </div>
-      </div>
-      <table>
-        <thead><tr><th>Name</th><th>Typ</th><th>Host</th><th>Pfad</th><th>Kapazität</th><th>Beschreibung</th><th></th></tr></thead>
-        <tbody id="tbl-targets"></tbody>
       </table>
     </div>
 
@@ -389,6 +389,7 @@ function switchView(view, event = null) {
   else if (view === 'topology') network.fit();
   else if (view === 'servers') renderServers();
   else if (view === 'tree') renderTree();
+  else if (view === 'targets') renderTargets();
   else if (view === 'table') renderTables();
 }
 
@@ -629,7 +630,6 @@ function renderTopology() {
 
 function renderTables() {
   renderSources();
-  renderTargets();
   renderJobs();
 }
 
