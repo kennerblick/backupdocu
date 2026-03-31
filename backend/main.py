@@ -35,6 +35,11 @@ DEFAULT_SERVER_LOCATIONS = [
     {'id': 4, 'name': 'virtuell'},
 ]
 
+DEFAULT_SERVER_FUNCTIONS = [
+    {'id': 1, 'name': 'Webserver', 'description': 'HTTP/HTTPS Dienste'},
+    {'id': 2, 'name': 'SFTP-Server', 'description': 'Dateiuebertragung via SFTP'},
+]
+
 # Initialize global files
 for name, path in GLOBAL_FILES.items():
     if not path.exists():
@@ -53,7 +58,7 @@ for name, path in GLOBAL_FILES.items():
         elif name == 'settings':
             path.write_text(json.dumps({
                 'custom_methods': [],
-                'server_functions': [],
+                'server_functions': DEFAULT_SERVER_FUNCTIONS,
                 'server_locations': DEFAULT_SERVER_LOCATIONS,
             }, indent=2, ensure_ascii=False), encoding='utf-8')
         else:
@@ -238,6 +243,30 @@ def delete_server_with_data(server_id: int) -> None:
     DataStore.delete_server_directory(server_id)
 
 
+def with_default_server_functions(settings: Dict[str, Any]) -> tuple[List[Dict[str, Any]], bool]:
+    """Return server functions with required defaults merged in."""
+    funcs = settings.get('server_functions', [])
+    if not isinstance(funcs, list):
+        funcs = []
+
+    existing_names = {str(f.get('name', '')).strip().lower() for f in funcs}
+    next_func_id = max((f.get('id', 0) for f in funcs if isinstance(f, dict)), default=0) + 1
+    changed = False
+
+    for default_fn in DEFAULT_SERVER_FUNCTIONS:
+        key = default_fn['name'].strip().lower()
+        if key in existing_names:
+            continue
+        fn = dict(default_fn)
+        fn['id'] = next_func_id
+        next_func_id += 1
+        funcs.append(fn)
+        existing_names.add(key)
+        changed = True
+
+    return funcs, changed
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PYDANTIC MODELS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -414,7 +443,11 @@ def list_server_functions():
     settings = DataStore.load_global('settings')
     if isinstance(settings, list):
         settings = {}
-    return settings.get('server_functions', [])
+    funcs, changed = with_default_server_functions(settings)
+    if changed:
+        settings['server_functions'] = funcs
+        DataStore.save_global('settings', settings)
+    return funcs
 
 
 @app.post('/api/server-functions', status_code=201)
@@ -422,7 +455,9 @@ def create_server_function(fn: ServerFunction):
     settings = DataStore.load_global('settings')
     if isinstance(settings, list):
         settings = {}
-    funcs = settings.get('server_functions', [])
+    funcs, changed = with_default_server_functions(settings)
+    if changed:
+        settings['server_functions'] = funcs
     fn_dict = fn.model_dump()
     fn_dict['id'] = max((f.get('id', 0) for f in funcs), default=0) + 1
     funcs.append(fn_dict)
@@ -436,7 +471,9 @@ def update_server_function(fn_id: int, fn: ServerFunction):
     settings = DataStore.load_global('settings')
     if isinstance(settings, list):
         settings = {}
-    funcs = settings.get('server_functions', [])
+    funcs, changed = with_default_server_functions(settings)
+    if changed:
+        settings['server_functions'] = funcs
     for i, f in enumerate(funcs):
         if f.get('id') == fn_id:
             funcs[i] = {'id': fn_id, 'name': fn.name, 'description': fn.description}
@@ -451,7 +488,9 @@ def delete_server_function(fn_id: int):
     settings = DataStore.load_global('settings')
     if isinstance(settings, list):
         settings = {}
-    funcs = settings.get('server_functions', [])
+    funcs, changed = with_default_server_functions(settings)
+    if changed:
+        settings['server_functions'] = funcs
     new_funcs = [f for f in funcs if f.get('id') != fn_id]
     if len(new_funcs) == len(funcs):
         raise HTTPException(status_code=404, detail='Server function not found')
