@@ -274,6 +274,15 @@ let network = null;
 let editId = null;
 let editType = null;
 
+async function apiGetJson(url, fallback) {
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    return await r.json();
+  } catch {
+    return fallback;
+  }
+}
+
 // ─── Init ────────────────────────────────────────────────────────────────────
 
 async function init() {
@@ -293,11 +302,11 @@ async function init() {
 
 async function loadAll() {
   const [servers, methods, targets, stats, serverFunctions] = await Promise.all([
-    fetch(`${API}/servers`).then(r => r.json()).catch(() => []),
-    fetch(`${API}/methods`).then(r => r.json()).catch(() => []),
-    fetch(`${API}/targets`).then(r => r.json()).catch(() => []),
-    fetch(`${API}/stats`).then(r => r.json()).catch(() => ({})),
-    fetch(`${API}/server-functions`).then(r => r.json()).catch(() => []),
+    apiGetJson(`${API}/servers`, []),
+    apiGetJson(`${API}/methods`, []),
+    apiGetJson(`${API}/targets`, []),
+    apiGetJson(`${API}/stats`, {}),
+    apiGetJson(`${API}/server-functions`, []),
   ]);
   data = { servers, methods, targets, stats, serverFunctions };
 }
@@ -308,8 +317,8 @@ async function loadServerData(serverId) {
     return;
   }
   const [sources, jobs] = await Promise.all([
-    fetch(`${API}/servers/${serverId}/sources`).then(r => r.json()).catch(() => []),
-    fetch(`${API}/servers/${serverId}/jobs`).then(r => r.json()).catch(() => []),
+    apiGetJson(`${API}/servers/${serverId}/sources`, []),
+    apiGetJson(`${API}/servers/${serverId}/jobs`, []),
   ]);
   currentServerData = { sources, jobs };
 }
