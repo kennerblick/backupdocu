@@ -175,7 +175,7 @@ textarea { resize: vertical; min-height: 60px; }
       
       <div class="section">
         <table>
-          <thead><tr><th>Name</th><th>Hostname</th><th>Typ</th><th>OS</th><th>Rolle</th><th>Notizen</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Hostname</th><th>Typ</th><th>OS</th><th>Rolle</th><th>Funktionen</th><th>Notizen</th><th></th></tr></thead>
           <tbody id="tbl-servers"></tbody>
         </table>
       </div>
@@ -266,7 +266,7 @@ textarea { resize: vertical; min-height: 60px; }
 <div class="toast" id="toast"></div>
 
 <script>
-const API = 'http://localhost:8000/api';
+const API = '/api';
 let data = { servers: [], methods: [], targets: [] };
 let currentServerData = { sources: [], jobs: [] };
 let selectedServerId = null;
@@ -292,12 +292,14 @@ async function init() {
 }
 
 async function loadAll() {
-  const [servers, methods, targets] = await Promise.all([
+  const [servers, methods, targets, stats, serverFunctions] = await Promise.all([
     fetch(`${API}/servers`).then(r => r.json()).catch(() => []),
     fetch(`${API}/methods`).then(r => r.json()).catch(() => []),
     fetch(`${API}/targets`).then(r => r.json()).catch(() => []),
+    fetch(`${API}/stats`).then(r => r.json()).catch(() => ({})),
+    fetch(`${API}/server-functions`).then(r => r.json()).catch(() => []),
   ]);
-  data = { servers, methods, targets };
+  data = { servers, methods, targets, stats, serverFunctions };
 }
 
 async function loadServerData(serverId) {
@@ -435,6 +437,10 @@ function toggleTreeNode(element) {
     children.style.display = 'block';
     element.textContent = '-';
   }
+}
+
+function toggleSection(section) {
+  section.classList.toggle('collapsed');
 }
 
 async function editFromTree(type, serverId, itemId) {
@@ -620,6 +626,7 @@ function renderServers() {
       <td>${badge(s.type || '-', typeMap[s.type] || 'config')}</td>
       <td class="text-muted">${s.os || '-'}</td>
       <td>${s.role || '-'}</td>
+      <td>${(s.functions||[]).map(f => `<span class="badge badge-active" style="margin:1px 2px;">${f}</span>`).join('') || '-'}</td>
       <td class="text-muted">${s.notes || ''}</td>
       <td><button class="btn btn-primary btn-sm" onclick="openModal('server',${s.id})">✏</button>
           <button class="btn btn-danger btn-sm" onclick="del('servers',${s.id})">✕</button></td>
@@ -752,14 +759,37 @@ function openModal(type, id = null) {
           ${['physical','vm-proxmox','vm-hyperv','container','cloud'].map(t =>
             `<option value="${t}" ${obj?.type===t?'selected':''}>${t}</option>`).join('')}
         </select></div>
-        <div><label>OS</label><input id="f-os" value="${obj?.os||''}"></div>
+        <div><label>OS</label><input id="f-os" value="${obj?.os||''}" oninput="updateQuickConfig()"></div>
         <div class="form-full"><label>Rolle</label><input id="f-role" value="${obj?.role||''}"></div>
+        <div class="form-full">
+          <label>Funktionen</label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
+            ${(data.serverFunctions||[]).map(fn => `
+              <label style="display:flex;align-items:center;gap:5px;cursor:pointer;background:var(--bg3);padding:4px 10px;border-radius:20px;border:1px solid var(--border);">
+                <input type="checkbox" value="${fn.name}" id="fn-${fn.id}" onchange="updateQuickConfig()" ${(obj?.functions||[]).includes(fn.name)?'checked':''}> ${fn.name}
+              </label>`).join('')}
+          </div>
+        </div>
+        <div class="form-full" id="quickconfig-section" style="display:none;">
+          <label style="font-size:12px;color:var(--text2);margin-bottom:8px;display:block;">⚡ Schnellkonfiguration Linux – Jobs automatisch anlegen</label>
+          <div style="background:var(--bg3);padding:12px;border-radius:8px;border:1px solid var(--border);display:flex;flex-direction:column;gap:10px;">
+            <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;line-height:1.5;">
+              <input type="checkbox" id="qc-sysbackup" style="margin-top:3px;">
+              <span><strong>Systembackup anlegen</strong><br><span style="color:var(--text2);font-size:12px;">Quellen: /etc, /home, /root &nbsp;·&nbsp; Methode: Bash-Script &nbsp;·&nbsp; Ziel: /backup</span></span>
+            </label>
+            <label id="qc-db-label" style="display:flex;align-items:flex-start;gap:8px;line-height:1.5;opacity:0.4;cursor:not-allowed;">
+              <input type="checkbox" id="qc-dbdump" disabled style="margin-top:3px;">
+              <span><strong>DB-Dump lokal anlegen</strong><br><span style="color:var(--text2);font-size:12px;">Quelle: DB-Dump komprimiert &nbsp;·&nbsp; Methode: pg_dump &nbsp;·&nbsp; Ziel: /backup-database &nbsp;<em style="color:var(--yellow)">(Funktion „DB" aktivieren)</em></span></span>
+            </label>
+          </div>
+        </div>
         <div class="form-full"><label>Notizen</label><textarea id="f-notes">${obj?.notes||''}</textarea></div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-cancel" onclick="closeModal()">Abbrechen</button>
         <button class="btn btn-primary" onclick="saveServer()">Speichern</button>
       </div>`;
+    setTimeout(() => updateQuickConfig(), 10);
   } else if (type === 'source') {
     if (!selectedServerId) {
       toast('Bitte zuerst einen Server wählen', true);
@@ -860,16 +890,81 @@ function intOrNull(id) { return id ? parseInt(id) : null; }
 function floatOrNull(id) { return id ? parseFloat(id) : null; }
 function g(id) { return document.getElementById(id); }
 
+function updateQuickConfig() {
+  const os = (g('f-os')?.value || '').toLowerCase();
+  const isLinux = os.includes('debian') || os.includes('ubuntu') || os.includes('linux');
+  const section = g('quickconfig-section');
+  if (!section) return;
+  section.style.display = isLinux ? 'block' : 'none';
+
+  const dbFnChecked = Array.from(document.querySelectorAll('[id^="fn-"]:checked')).some(cb => cb.value === 'DB');
+  const dbDump = g('qc-dbdump');
+  const dbLabel = g('qc-db-label');
+  if (dbDump) {
+    dbDump.disabled = !dbFnChecked;
+    if (!dbFnChecked) dbDump.checked = false;
+    if (dbLabel) { dbLabel.style.opacity = dbFnChecked ? '1' : '0.4'; dbLabel.style.cursor = dbFnChecked ? 'pointer' : 'not-allowed'; }
+  }
+}
+
+async function createQuickJob(serverId, existingSources, existingJobs, srcType, srcName, srcPath, srcDesc, methodType, jobName, jobNotes) {
+  let source = existingSources.find(s => s.name === srcName);
+  if (!source) {
+    const sr = await fetch(`${API}/servers/${serverId}/sources`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: srcName, type: srcType, path: srcPath, description: srcDesc })
+    });
+    if (!sr.ok) return false;
+    source = await sr.json();
+  }
+  if (existingJobs.find(j => j.name === jobName)) return true;
+  const mth = data.methods.find(m => m.type === methodType);
+  const jr = await fetch(`${API}/servers/${serverId}/jobs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: jobName, source_id: source.id, method_id: mth?.id || null,
+      status: 'active', is_compressed: true, is_encrypted: false, notes: jobNotes })
+  });
+  return jr.ok;
+}
+
 async function saveServer() {
+  const functions = Array.from(document.querySelectorAll('[id^="fn-"]:checked')).map(cb => cb.value);
   const body = { name: g('f-name').value, hostname: g('f-hostname').value || null,
     type: g('f-type').value, os: g('f-os').value || null,
-    role: g('f-role').value || null, notes: g('f-notes').value || null };
-  
+    role: g('f-role').value || null, notes: g('f-notes').value || null,
+    functions };
+
   const url = editId ? `${API}/servers/${editId}` : `${API}/servers`;
   const method = editId ? 'PUT' : 'POST';
   const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!r.ok) { toast('Fehler beim Speichern', true); return; }
-  toast('Gespeichert ✓');
+  const saved = await r.json();
+  const serverId = saved.id;
+
+  const qcSys = g('qc-sysbackup')?.checked;
+  const qcDb = g('qc-dbdump')?.checked;
+  let created = 0;
+
+  if (qcSys || qcDb) {
+    const [existingSources, existingJobs] = await Promise.all([
+      fetch(`${API}/servers/${serverId}/sources`).then(res => res.json()).catch(() => []),
+      fetch(`${API}/servers/${serverId}/jobs`).then(res => res.json()).catch(() => []),
+    ]);
+    if (qcSys) {
+      const ok = await createQuickJob(serverId, existingSources, existingJobs,
+        'system', 'Systembackup lokal', '/etc /home /root', 'Lokales Systembackup per Bash-Script',
+        'bash-script', 'Systembackup täglich', 'Backup nach /backup');
+      if (ok) created++;
+    }
+    if (qcDb) {
+      const ok = await createQuickJob(serverId, existingSources, existingJobs,
+        'database', 'DB-Dump lokal', '/backup-database', 'Lokaler Datenbankdump, komprimiert',
+        'pg_dump', 'DB-Dump täglich', 'Dump nach /backup-database');
+      if (ok) created++;
+    }
+  }
+
+  toast(created > 0 ? `Gespeichert ✓ – ${created} Job(s) automatisch angelegt` : 'Gespeichert ✓');
   closeModal();
   await loadAll();
   renderStats();

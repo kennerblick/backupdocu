@@ -212,6 +212,13 @@ class ServerBase(BaseModel):
     os: Optional[str] = None
     role: Optional[str] = None
     notes: Optional[str] = None
+    functions: List[str] = []
+
+
+class ServerFunction(BaseModel):
+    id: Optional[int] = None
+    name: str
+    description: Optional[str] = None
 
 
 class BackupSourceBase(BaseModel):
@@ -346,6 +353,60 @@ def get_method(method_id: int):
     if not method:
         raise HTTPException(status_code=404, detail='Method not found')
     return method
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ENDPOINTS: SERVER FUNCTIONS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get('/api/server-functions')
+def list_server_functions():
+    settings = DataStore.load_global('settings')
+    if isinstance(settings, list):
+        settings = {}
+    return settings.get('server_functions', [])
+
+
+@app.post('/api/server-functions', status_code=201)
+def create_server_function(fn: ServerFunction):
+    settings = DataStore.load_global('settings')
+    if isinstance(settings, list):
+        settings = {}
+    funcs = settings.get('server_functions', [])
+    fn_dict = fn.model_dump()
+    fn_dict['id'] = max((f.get('id', 0) for f in funcs), default=0) + 1
+    funcs.append(fn_dict)
+    settings['server_functions'] = funcs
+    DataStore.save_global('settings', settings)
+    return fn_dict
+
+
+@app.put('/api/server-functions/{fn_id}')
+def update_server_function(fn_id: int, fn: ServerFunction):
+    settings = DataStore.load_global('settings')
+    if isinstance(settings, list):
+        settings = {}
+    funcs = settings.get('server_functions', [])
+    for i, f in enumerate(funcs):
+        if f.get('id') == fn_id:
+            funcs[i] = {'id': fn_id, 'name': fn.name, 'description': fn.description}
+            settings['server_functions'] = funcs
+            DataStore.save_global('settings', settings)
+            return funcs[i]
+    raise HTTPException(status_code=404, detail='Server function not found')
+
+
+@app.delete('/api/server-functions/{fn_id}', status_code=204)
+def delete_server_function(fn_id: int):
+    settings = DataStore.load_global('settings')
+    if isinstance(settings, list):
+        settings = {}
+    funcs = settings.get('server_functions', [])
+    new_funcs = [f for f in funcs if f.get('id') != fn_id]
+    if len(new_funcs) == len(funcs):
+        raise HTTPException(status_code=404, detail='Server function not found')
+    settings['server_functions'] = new_funcs
+    DataStore.save_global('settings', settings)
 
 
 @app.get('/api/targets')
