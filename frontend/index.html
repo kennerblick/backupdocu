@@ -785,11 +785,11 @@ function openModal(type, id = null) {
           <div style="background:var(--bg3);padding:12px;border-radius:8px;border:1px solid var(--border);display:flex;flex-direction:column;gap:10px;">
             <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;line-height:1.5;">
               <input type="checkbox" id="qc-sysbackup" style="margin-top:3px;">
-              <span><strong>Systembackup anlegen</strong><br><span style="color:var(--text2);font-size:12px;">Quellen: /etc, /home, /root &nbsp;·&nbsp; Methode: Bash-Script &nbsp;·&nbsp; Ziel: /backup</span></span>
+              <span><strong>Systembackup anlegen</strong><br><span style="color:var(--text2);font-size:12px;">Quellen: /etc, /home, /root &nbsp;·&nbsp; Methode: Bash-Script &nbsp;·&nbsp; Ziel: /backup &nbsp;·&nbsp; Zeitplan: täglich &nbsp;·&nbsp; Aufbewahrung: 3 Tage</span></span>
             </label>
             <label id="qc-db-label" style="display:flex;align-items:flex-start;gap:8px;line-height:1.5;opacity:0.4;cursor:not-allowed;">
               <input type="checkbox" id="qc-dbdump" disabled style="margin-top:3px;">
-              <span><strong>DB-Dump lokal anlegen</strong><br><span style="color:var(--text2);font-size:12px;">Quelle: DB-Dump komprimiert &nbsp;·&nbsp; Methode: pg_dump &nbsp;·&nbsp; Ziel: /backup-database &nbsp;<em style="color:var(--yellow)">(Funktion „DB" aktivieren)</em></span></span>
+              <span><strong>DB-Dump lokal anlegen</strong><br><span style="color:var(--text2);font-size:12px;">Quelle: DB-Dump komprimiert &nbsp;·&nbsp; Methode: pg_dump &nbsp;·&nbsp; Ziel: /backup-database &nbsp;·&nbsp; Zeitplan: täglich &nbsp;·&nbsp; Aufbewahrung: 3 Tage &nbsp;<em style="color:var(--yellow)">(Funktion „DB" aktivieren)</em></span></span>
             </label>
           </div>
         </div>
@@ -932,7 +932,8 @@ async function createQuickJob(serverId, existingSources, existingJobs, srcType, 
   const jr = await fetch(`${API}/servers/${serverId}/jobs`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: jobName, source_id: source.id, method_id: mth?.id || null,
-      status: 'active', is_compressed: true, is_encrypted: false, notes: jobNotes })
+      status: 'active', schedule: 'daily', retention: '3 Tage', is_compressed: true,
+      is_encrypted: false, notes: jobNotes })
   });
   return jr.ok;
 }
