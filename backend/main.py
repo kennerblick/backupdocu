@@ -27,6 +27,7 @@ GLOBAL_FILES = {
 }
 
 BACKUP_TYPES_FILE = CONFIG_DIR / 'backup-types.json'
+VIRTUALIZATION_TYPES_FILE = CONFIG_DIR / 'virtualization-types.json'
 
 DEFAULT_SERVER_LOCATIONS = [
     {'id': 1, 'name': 'extern'},
@@ -38,6 +39,13 @@ DEFAULT_SERVER_LOCATIONS = [
 DEFAULT_SERVER_FUNCTIONS = [
     {'id': 1, 'name': 'Webserver', 'description': 'HTTP/HTTPS Dienste'},
     {'id': 2, 'name': 'SFTP-Server', 'description': 'Dateiuebertragung via SFTP'},
+]
+
+DEFAULT_VIRTUALIZATION_TYPES = [
+    {'id': 1, 'name': 'HyperV'},
+    {'id': 2, 'name': 'Docker'},
+    {'id': 3, 'name': 'Proxmox'},
+    {'id': 4, 'name': 'Kubernetes'},
 ]
 
 # Initialize global files
@@ -73,6 +81,12 @@ if not BACKUP_TYPES_FILE.exists():
         {'id': 5, 'name': 'Local', 'type': 'local'},
         {'id': 6, 'name': 'S3', 'type': 's3'},
     ], indent=2, ensure_ascii=False), encoding='utf-8')
+
+if not VIRTUALIZATION_TYPES_FILE.exists():
+    VIRTUALIZATION_TYPES_FILE.write_text(
+        json.dumps(DEFAULT_VIRTUALIZATION_TYPES, indent=2, ensure_ascii=False),
+        encoding='utf-8'
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -267,6 +281,66 @@ def with_default_server_functions(settings: Dict[str, Any]) -> tuple[List[Dict[s
     return funcs, changed
 
 
+def load_virtualization_types() -> List[Dict[str, Any]]:
+    """Load virtualization types from config-data."""
+    try:
+        data = json.loads(VIRTUALIZATION_TYPES_FILE.read_text(encoding='utf-8'))
+        if isinstance(data, list):
+            return data
+    except (json.JSONDecodeError, FileNotFoundError):
+        pass
+    return DEFAULT_VIRTUALIZATION_TYPES
+
+
+def virtualization_name_lookup() -> Dict[str, str]:
+    """Return normalized-name lookup for configured virtualization values."""
+    lookup: Dict[str, str] = {}
+    for item in load_virtualization_types():
+        name = str(item.get('name', '')).strip()
+        if not name:
+            continue
+        key = name.lower().replace(' ', '').replace('_', '-').replace('.', '')
+        lookup[key] = name
+    # legacy aliases
+    if 'hyperv' in lookup:
+        lookup['hyper-v'] = lookup['hyperv']
+    elif 'hyper-v' in lookup:
+        lookup['hyperv'] = lookup['hyper-v']
+    return lookup
+
+
+def normalize_virtualization(value: Optional[str]) -> Optional[str]:
+    """Normalize virtualization label to one of allowed values."""
+    if not value:
+        return None
+    key = str(value).strip().lower().replace(' ', '').replace('_', '-')
+    key = key.replace('.', '')
+    return virtualization_name_lookup().get(key)
+
+
+def normalize_server_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Move virtualization values out of functions into dedicated field."""
+    normalized = dict(payload)
+    functions = normalized.get('functions') or []
+    if not isinstance(functions, list):
+        functions = []
+
+    virtualization = normalize_virtualization(normalized.get('virtualization'))
+    clean_functions = []
+    for fn in functions:
+        fn_value = str(fn).strip()
+        fn_virtualization = normalize_virtualization(fn_value)
+        if fn_virtualization:
+            if not virtualization:
+                virtualization = fn_virtualization
+            continue
+        clean_functions.append(fn_value)
+
+    normalized['functions'] = clean_functions
+    normalized['virtualization'] = virtualization
+    return normalized
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # PYDANTIC MODELS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -279,6 +353,7 @@ class ServerBase(BaseModel):
     role: Optional[str] = None
     location: Optional[str] = None
     functions: List[str] = []
+    virtualization: Optional[str] = None
 
 
 class ServerFunction(BaseModel):
@@ -387,7 +462,7 @@ def get_stats():
 
 @app.get('/api/servers')
 def list_servers():
-    return DataStore.load_global('servers')
+    return [normalize_server_payload(server) for server in DataStore.load_global('servers')]
 
 
 @app.get('/api/servers/{server_id}')
@@ -395,17 +470,17 @@ def get_server(server_id: int):
     server = get_item_global('servers', server_id)
     if not server:
         raise HTTPException(status_code=404, detail='Server not found')
-    return server
+    return normalize_server_payload(server)
 
 
 @app.post('/api/servers', status_code=201)
 def create_server(server: ServerBase):
-    return upsert_global('servers', None, server.model_dump())
+    return upsert_global('servers', None, normalize_server_payload(server.model_dump()))
 
 
 @app.put('/api/servers/{server_id}')
 def update_server(server_id: int, server: ServerBase):
-    return upsert_global('servers', server_id, server.model_dump())
+    return upsert_global('servers', server_id, normalize_server_payload(server.model_dump()))
 
 
 @app.delete('/api/servers/{server_id}', status_code=204)
@@ -424,6 +499,11 @@ def list_backup_types():
         return json.loads(BACKUP_TYPES_FILE.read_text(encoding='utf-8'))
     except (json.JSONDecodeError, FileNotFoundError):
         return []
+
+
+@app.get('/api/virtualization-types')
+def list_virtualization_types():
+    return load_virtualization_types()
 
 
 @app.get('/api/methods/{method_id}')

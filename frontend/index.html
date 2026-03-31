@@ -183,7 +183,7 @@ textarea { resize: vertical; min-height: 60px; }
       
       <div class="section" style="flex: 1; min-height: 0; overflow-y: auto;">
         <table>
-          <thead><tr><th>Name</th><th>Hostname</th><th>Typ</th><th>OS</th><th>Rolle</th><th>Funktionen</th><th>Standort</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Hostname</th><th>Typ</th><th>OS</th><th>Rolle</th><th>Funktionen</th><th>Virtualisierung</th><th>Standort</th><th></th></tr></thead>
           <tbody id="tbl-servers"></tbody>
         </table>
       </div>
@@ -274,7 +274,7 @@ textarea { resize: vertical; min-height: 60px; }
 
 <script>
 const API = '/api';
-let data = { servers: [], methods: [], targets: [], backupTypes: [], serverLocations: [] };
+let data = { servers: [], methods: [], targets: [], backupTypes: [], virtualizationTypes: [], serverLocations: [] };
 let currentServerData = { sources: [], jobs: [] };
 let selectedServerId = null;
 let network = null;
@@ -282,6 +282,41 @@ let editId = null;
 let editType = null;
 let serverModalSources = [];
 let serverModalSourceEditId = null;
+const DEFAULT_VIRTUALIZATION_OPTIONS = ['HyperV', 'Docker', 'Proxmox', 'Kubernetes'];
+
+function getVirtualizationOptions() {
+  const names = (data.virtualizationTypes || []).map(v => v.name).filter(Boolean);
+  return names.length ? names : DEFAULT_VIRTUALIZATION_OPTIONS;
+}
+
+function normalizeVirtualizationValue(value) {
+  if (!value) return null;
+  const key = String(value).trim().toLowerCase().replace(/\s+/g, '').replace(/_/g, '-').replace(/\./g, '');
+  const options = getVirtualizationOptions();
+  for (const option of options) {
+    const optionKey = String(option).trim().toLowerCase().replace(/\s+/g, '').replace(/_/g, '-').replace(/\./g, '');
+    if (optionKey === key) return option;
+  }
+  if (key === 'hyper-v') {
+    const hyperV = options.find(option => String(option).trim().toLowerCase().replace(/\s+/g, '').replace(/_/g, '-') === 'hyperv');
+    if (hyperV) return hyperV;
+  }
+  if (key === 'hyperv') {
+    const hyperDashV = options.find(option => String(option).trim().toLowerCase().replace(/\s+/g, '').replace(/_/g, '-') === 'hyper-v');
+    if (hyperDashV) return hyperDashV;
+  }
+  return null;
+}
+
+function extractVirtualization(server) {
+  const direct = normalizeVirtualizationValue(server?.virtualization);
+  if (direct) return direct;
+  for (const fn of (server?.functions || [])) {
+    const v = normalizeVirtualizationValue(fn);
+    if (v) return v;
+  }
+  return null;
+}
 
 async function apiGetJson(url, fallback) {
   try {
@@ -310,7 +345,7 @@ async function init() {
 }
 
 async function loadAll() {
-  const [servers, methods, targets, backupTypes, stats, serverFunctions, serverLocations] = await Promise.all([
+  const [servers, methods, targets, backupTypes, virtualizationTypes, stats, serverFunctions, serverLocations] = await Promise.all([
     apiGetJson(`${API}/servers`, []),
     apiGetJson(`${API}/methods`, []),
     apiGetJson(`${API}/targets`, []),
@@ -322,11 +357,17 @@ async function loadAll() {
       { id: 5, name: 'Local', type: 'local' },
       { id: 6, name: 'S3', type: 's3' },
     ]),
+    apiGetJson(`${API}/virtualization-types`, [
+      { id: 1, name: 'HyperV' },
+      { id: 2, name: 'Docker' },
+      { id: 3, name: 'Proxmox' },
+      { id: 4, name: 'Kubernetes' },
+    ]),
     apiGetJson(`${API}/stats`, {}),
     apiGetJson(`${API}/server-functions`, []),
     apiGetJson(`${API}/server-locations`, []),
   ]);
-  data = { servers, methods, targets, backupTypes, stats, serverFunctions, serverLocations };
+  data = { servers, methods, targets, backupTypes, virtualizationTypes, stats, serverFunctions, serverLocations };
 }
 
 async function loadServerData(serverId) {
@@ -729,18 +770,19 @@ function renderServers() {
         <td class="text-muted">${s.os || '-'}</td>
         <td>${s.role || '-'}</td>
         <td>${(s.functions||[]).map(f => `<span class="badge badge-active" style="margin:1px 2px;">${f}</span>`).join('') || '-'}</td>
+        <td class="text-muted">${extractVirtualization(s) || '-'}</td>
         <td class="text-muted">${s.location || '-'}</td>
         <td><button class="btn btn-primary btn-sm" onclick="openModal('server',${s.id})">✏</button>
             <button class="btn btn-danger btn-sm" onclick="del('servers',${s.id})">✕</button></td>
       </tr>`).join('');
     return `
       <tr>
-        <td colspan="8" style="background:var(--bg3);color:var(--accent);font-weight:700;letter-spacing:.2px;">Standort: ${group} (${grouped[group].length})</td>
+        <td colspan="9" style="background:var(--bg3);color:var(--accent);font-weight:700;letter-spacing:.2px;">Standort: ${group} (${grouped[group].length})</td>
       </tr>
       ${rows}
     `;
   }).join('');
-  document.getElementById('tbl-servers').innerHTML = html || '<tr><td colspan="8" class="text-muted">Keine Server gefunden</td></tr>';
+  document.getElementById('tbl-servers').innerHTML = html || '<tr><td colspan="9" class="text-muted">Keine Server gefunden</td></tr>';
 }
 
 function renderSources() {
@@ -987,6 +1029,8 @@ function openModal(type, id = null) {
   const content = document.getElementById('modal-content');
 
   if (type === 'server') {
+    const serverFunctions = (data.serverFunctions || []).filter(fn => !normalizeVirtualizationValue(fn.name));
+    const virtualizationValue = extractVirtualization(obj);
     const locationNames = Array.from(new Set([
       ...(data.serverLocations || []).map(l => l.name),
       ...(obj?.location ? [obj.location] : []),
@@ -1005,10 +1049,14 @@ function openModal(type, id = null) {
         <div><label>Standort</label><select id="f-location">
           ${locationNames.map(loc => `<option value="${loc}" ${obj?.location===loc?'selected':''}>${loc}</option>`).join('')}
         </select></div>
+        <div><label>Virtualisierung</label><select id="f-virtualization">
+          <option value="">-</option>
+          ${getVirtualizationOptions().map(v => `<option value="${v}" ${virtualizationValue===v?'selected':''}>${v}</option>`).join('')}
+        </select></div>
         <div class="form-full">
           <label>Funktionen</label>
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
-            ${(data.serverFunctions||[]).map(fn => `
+            ${serverFunctions.map(fn => `
               <label style="display:flex;align-items:center;gap:5px;cursor:pointer;background:var(--bg3);padding:4px 10px;border-radius:20px;border:1px solid var(--border);">
                 <input type="checkbox" value="${fn.name}" id="fn-${fn.id}" onchange="updateQuickConfig()" ${(obj?.functions||[]).includes(fn.name)?'checked':''}> ${fn.name}
               </label>`).join('')}
@@ -1207,7 +1255,8 @@ async function saveServer() {
   const body = { name: g('f-name').value, hostname: g('f-hostname').value || null,
     type: g('f-type').value, os: g('f-os').value || null,
     role: g('f-role').value || null, location: g('f-location').value || null,
-    functions };
+    functions,
+    virtualization: g('f-virtualization')?.value || null };
 
   const url = editId ? `${API}/servers/${editId}` : `${API}/servers`;
   const method = editId ? 'PUT' : 'POST';

@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "name": "HyperV"
+  },
+  {
+    "id": 2,
+    "name": "Docker"
+  },
+  {
+    "id": 3,
+    "name": "Proxmox"
+  },
+  {
+    "id": 4,
+    "name": "Kubernetes"
+  }
+]
