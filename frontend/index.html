@@ -719,6 +719,7 @@ async function del(entity, id) {
   await loadServerData(selectedServerId);
   renderStats();
   renderServerSelector();
+  renderServers();
   renderTables();
   network = null;
 }
@@ -969,6 +970,7 @@ async function saveServer() {
   await loadAll();
   renderStats();
   renderServerSelector();
+  renderServers();
   renderTables();
   network = null;
 }
