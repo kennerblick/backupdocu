@@ -143,10 +143,14 @@ def upsert_global(collection: str, item_id: Optional[int], payload: Dict[str, An
         DataStore.save_global(collection, items)
         return payload
     
-    existing = get_item_global(collection, item_id)
+    existing = None
+    for item in items:
+        if item.get('id') == item_id:
+            existing = item
+            break
     if not existing:
         raise HTTPException(status_code=404, detail='Not found')
-    
+
     for key, value in payload.items():
         existing[key] = value
     existing['updated_at'] = datetime.utcnow().isoformat()
@@ -166,10 +170,14 @@ def upsert_server(server_id: int, collection: str, item_id: Optional[int], paylo
         DataStore.save_server_data(server_id, collection, items)
         return payload
     
-    existing = get_item_server(server_id, collection, item_id)
+    existing = None
+    for item in items:
+        if item.get('id') == item_id:
+            existing = item
+            break
     if not existing:
         raise HTTPException(status_code=404, detail='Not found')
-    
+
     for key, value in payload.items():
         existing[key] = value
     existing['updated_at'] = datetime.utcnow().isoformat()
