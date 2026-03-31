@@ -23,6 +23,13 @@ GLOBAL_FILES = {
     'settings': DATA_DIR / 'settings.json',
 }
 
+DEFAULT_SERVER_LOCATIONS = [
+    {'id': 1, 'name': 'extern'},
+    {'id': 2, 'name': 'gruenes Netz'},
+    {'id': 3, 'name': 'gelbes Netz'},
+    {'id': 4, 'name': 'virtuell'},
+]
+
 # Initialize global files
 for name, path in GLOBAL_FILES.items():
     if not path.exists():
@@ -36,7 +43,11 @@ for name, path in GLOBAL_FILES.items():
                 {'id': 6, 'name': 'Tape Job', 'type': 'tape-job', 'description': 'Tape Sicherung'},
             ], indent=2, ensure_ascii=False), encoding='utf-8')
         elif name == 'settings':
-            path.write_text(json.dumps({'custom_methods': []}, indent=2, ensure_ascii=False), encoding='utf-8')
+            path.write_text(json.dumps({
+                'custom_methods': [],
+                'server_functions': [],
+                'server_locations': DEFAULT_SERVER_LOCATIONS,
+            }, indent=2, ensure_ascii=False), encoding='utf-8')
         else:
             path.write_text('[]', encoding='utf-8')
 
@@ -219,7 +230,7 @@ class ServerBase(BaseModel):
     type: Optional[str] = 'physical'
     os: Optional[str] = None
     role: Optional[str] = None
-    notes: Optional[str] = None
+    location: Optional[str] = None
     functions: List[str] = []
 
 
@@ -227,6 +238,11 @@ class ServerFunction(BaseModel):
     id: Optional[int] = None
     name: str
     description: Optional[str] = None
+
+
+class ServerLocation(BaseModel):
+    id: Optional[int] = None
+    name: str
 
 
 class BackupSourceBase(BaseModel):
@@ -414,6 +430,60 @@ def delete_server_function(fn_id: int):
     if len(new_funcs) == len(funcs):
         raise HTTPException(status_code=404, detail='Server function not found')
     settings['server_functions'] = new_funcs
+    DataStore.save_global('settings', settings)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ENDPOINTS: SERVER LOCATIONS
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get('/api/server-locations')
+def list_server_locations():
+    settings = DataStore.load_global('settings')
+    if isinstance(settings, list):
+        settings = {}
+    return settings.get('server_locations', DEFAULT_SERVER_LOCATIONS)
+
+
+@app.post('/api/server-locations', status_code=201)
+def create_server_location(location: ServerLocation):
+    settings = DataStore.load_global('settings')
+    if isinstance(settings, list):
+        settings = {}
+    locations = settings.get('server_locations', DEFAULT_SERVER_LOCATIONS.copy())
+    loc_dict = location.model_dump()
+    loc_dict['id'] = max((l.get('id', 0) for l in locations), default=0) + 1
+    locations.append(loc_dict)
+    settings['server_locations'] = locations
+    DataStore.save_global('settings', settings)
+    return loc_dict
+
+
+@app.put('/api/server-locations/{location_id}')
+def update_server_location(location_id: int, location: ServerLocation):
+    settings = DataStore.load_global('settings')
+    if isinstance(settings, list):
+        settings = {}
+    locations = settings.get('server_locations', DEFAULT_SERVER_LOCATIONS.copy())
+    for i, l in enumerate(locations):
+        if l.get('id') == location_id:
+            locations[i] = {'id': location_id, 'name': location.name}
+            settings['server_locations'] = locations
+            DataStore.save_global('settings', settings)
+            return locations[i]
+    raise HTTPException(status_code=404, detail='Server location not found')
+
+
+@app.delete('/api/server-locations/{location_id}', status_code=204)
+def delete_server_location(location_id: int):
+    settings = DataStore.load_global('settings')
+    if isinstance(settings, list):
+        settings = {}
+    locations = settings.get('server_locations', DEFAULT_SERVER_LOCATIONS.copy())
+    new_locations = [l for l in locations if l.get('id') != location_id]
+    if len(new_locations) == len(locations):
+        raise HTTPException(status_code=404, detail='Server location not found')
+    settings['server_locations'] = new_locations
     DataStore.save_global('settings', settings)
 
 

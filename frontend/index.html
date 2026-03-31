@@ -170,12 +170,18 @@ textarea { resize: vertical; min-height: 60px; }
     <div style="padding: 20px; gap: 12px; display: flex; flex-direction: column;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
         <h2 style="margin: 0; color: var(--accent);">Server-Verwaltung</h2>
-        <button class="btn btn-primary" onclick="openModal('server')">+ Neuer Server</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <label for="server-location-filter" style="color:var(--text2);font-size:13px;">Standort:</label>
+          <select id="server-location-filter" onchange="renderServers()" style="min-width:190px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 10px;">
+            <option value="">Alle Standorte</option>
+          </select>
+          <button class="btn btn-primary" onclick="openModal('server')">+ Neuer Server</button>
+        </div>
       </div>
       
       <div class="section">
         <table>
-          <thead><tr><th>Name</th><th>Hostname</th><th>Typ</th><th>OS</th><th>Rolle</th><th>Funktionen</th><th>Notizen</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Hostname</th><th>Typ</th><th>OS</th><th>Rolle</th><th>Funktionen</th><th>Standort</th><th></th></tr></thead>
           <tbody id="tbl-servers"></tbody>
         </table>
       </div>
@@ -267,7 +273,7 @@ textarea { resize: vertical; min-height: 60px; }
 
 <script>
 const API = '/api';
-let data = { servers: [], methods: [], targets: [] };
+let data = { servers: [], methods: [], targets: [], serverLocations: [] };
 let currentServerData = { sources: [], jobs: [] };
 let selectedServerId = null;
 let network = null;
@@ -301,14 +307,15 @@ async function init() {
 }
 
 async function loadAll() {
-  const [servers, methods, targets, stats, serverFunctions] = await Promise.all([
+  const [servers, methods, targets, stats, serverFunctions, serverLocations] = await Promise.all([
     apiGetJson(`${API}/servers`, []),
     apiGetJson(`${API}/methods`, []),
     apiGetJson(`${API}/targets`, []),
     apiGetJson(`${API}/stats`, {}),
     apiGetJson(`${API}/server-functions`, []),
+    apiGetJson(`${API}/server-locations`, []),
   ]);
-  data = { servers, methods, targets, stats, serverFunctions };
+  data = { servers, methods, targets, stats, serverFunctions, serverLocations };
 }
 
 async function loadServerData(serverId) {
@@ -627,19 +634,55 @@ function renderTables() {
 }
 
 function renderServers() {
+  const locationFilter = document.getElementById('server-location-filter');
+  const prevFilter = locationFilter ? locationFilter.value : '';
+  const locationNames = Array.from(new Set([
+    ...(data.serverLocations || []).map(l => l.name),
+    ...data.servers.map(s => s.location).filter(Boolean),
+  ])).sort((a, b) => a.localeCompare(b, 'de'));
+  if (locationFilter) {
+    locationFilter.innerHTML = '<option value="">Alle Standorte</option>' +
+      locationNames.map(name => `<option value="${name}">${name}</option>`).join('');
+    if (locationNames.includes(prevFilter)) {
+      locationFilter.value = prevFilter;
+    }
+  }
+
+  const selectedLocation = (locationFilter && locationFilter.value) ? locationFilter.value : '';
+  const servers = selectedLocation
+    ? data.servers.filter(s => (s.location || '') === selectedLocation)
+    : data.servers;
+
+  const grouped = {};
+  for (const server of servers) {
+    const key = server.location || 'ohne Standort';
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(server);
+  }
+
+  const groupKeys = Object.keys(grouped).sort((a, b) => a.localeCompare(b, 'de'));
   const typeMap = { physical: 'server', 'vm-proxmox': 'vm', 'vm-hyperv': 'vm', container: 'config', cloud: 'offsite' };
-  document.getElementById('tbl-servers').innerHTML = data.servers.map(s => `
-    <tr>
-      <td><strong>${s.name}</strong></td>
-      <td class="font-mono">${s.hostname || '-'}</td>
-      <td>${badge(s.type || '-', typeMap[s.type] || 'config')}</td>
-      <td class="text-muted">${s.os || '-'}</td>
-      <td>${s.role || '-'}</td>
-      <td>${(s.functions||[]).map(f => `<span class="badge badge-active" style="margin:1px 2px;">${f}</span>`).join('') || '-'}</td>
-      <td class="text-muted">${s.notes || ''}</td>
-      <td><button class="btn btn-primary btn-sm" onclick="openModal('server',${s.id})">✏</button>
-          <button class="btn btn-danger btn-sm" onclick="del('servers',${s.id})">✕</button></td>
-    </tr>`).join('');
+  const html = groupKeys.map(group => {
+    const rows = grouped[group].sort((a, b) => a.name.localeCompare(b.name, 'de')).map(s => `
+      <tr>
+        <td><strong>${s.name}</strong></td>
+        <td class="font-mono">${s.hostname || '-'}</td>
+        <td>${badge(s.type || '-', typeMap[s.type] || 'config')}</td>
+        <td class="text-muted">${s.os || '-'}</td>
+        <td>${s.role || '-'}</td>
+        <td>${(s.functions||[]).map(f => `<span class="badge badge-active" style="margin:1px 2px;">${f}</span>`).join('') || '-'}</td>
+        <td class="text-muted">${s.location || '-'}</td>
+        <td><button class="btn btn-primary btn-sm" onclick="openModal('server',${s.id})">✏</button>
+            <button class="btn btn-danger btn-sm" onclick="del('servers',${s.id})">✕</button></td>
+      </tr>`).join('');
+    return `
+      <tr>
+        <td colspan="8" style="background:var(--bg3);color:var(--accent);font-weight:700;letter-spacing:.2px;">Standort: ${group} (${grouped[group].length})</td>
+      </tr>
+      ${rows}
+    `;
+  }).join('');
+  document.getElementById('tbl-servers').innerHTML = html || '<tr><td colspan="8" class="text-muted">Keine Server gefunden</td></tr>';
 }
 
 function renderSources() {
@@ -760,6 +803,10 @@ function openModal(type, id = null) {
   const content = document.getElementById('modal-content');
 
   if (type === 'server') {
+    const locationNames = Array.from(new Set([
+      ...(data.serverLocations || []).map(l => l.name),
+      ...(obj?.location ? [obj.location] : []),
+    ]));
     content.innerHTML = `
       <h3>${id ? 'Server bearbeiten' : 'Neuer Server'}</h3>
       <div class="form-grid">
@@ -771,6 +818,9 @@ function openModal(type, id = null) {
         </select></div>
         <div><label>OS</label><input id="f-os" value="${obj?.os||''}" oninput="updateQuickConfig()"></div>
         <div class="form-full"><label>Rolle</label><input id="f-role" value="${obj?.role||''}"></div>
+        <div><label>Standort</label><select id="f-location">
+          ${locationNames.map(loc => `<option value="${loc}" ${obj?.location===loc?'selected':''}>${loc}</option>`).join('')}
+        </select></div>
         <div class="form-full">
           <label>Funktionen</label>
           <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
@@ -793,7 +843,6 @@ function openModal(type, id = null) {
             </label>
           </div>
         </div>
-        <div class="form-full"><label>Notizen</label><textarea id="f-notes">${obj?.notes||''}</textarea></div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-cancel" onclick="closeModal()">Abbrechen</button>
@@ -942,7 +991,7 @@ async function saveServer() {
   const functions = Array.from(document.querySelectorAll('[id^="fn-"]:checked')).map(cb => cb.value);
   const body = { name: g('f-name').value, hostname: g('f-hostname').value || null,
     type: g('f-type').value, os: g('f-os').value || null,
-    role: g('f-role').value || null, notes: g('f-notes').value || null,
+    role: g('f-role').value || null, location: g('f-location').value || null,
     functions };
 
   const url = editId ? `${API}/servers/${editId}` : `${API}/servers`;
