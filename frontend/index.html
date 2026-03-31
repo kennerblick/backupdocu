@@ -354,6 +354,9 @@ async function selectServer(serverId) {
   }
   
   renderTables();
+  if (document.getElementById('view-topology').classList.contains('active')) {
+    renderTopology();
+  }
 }
 
 function renderServerSelector() {
@@ -387,8 +390,7 @@ function switchView(view, event = null) {
   if (event && event.target) {
     event.target.classList.add('active');
   }
-  if (view === 'topology' && !network) renderTopology();
-  else if (view === 'topology') network.fit();
+  if (view === 'topology') renderTopology();
   else if (view === 'servers') renderServers();
   else if (view === 'tree') renderTree();
   else if (view === 'targets') renderTargets();
@@ -522,6 +524,12 @@ function nodeColor(group, type) {
 }
 
 function renderTopology() {
+  const container = document.getElementById('network-container');
+  if (!(window.vis && vis.Network)) {
+    container.innerHTML = '<div style="padding:24px;color:var(--red);">Topologie kann nicht geladen werden (vis-network nicht verfuegbar).</div>';
+    return;
+  }
+
   const nodes = [];
   const edges = [];
 
@@ -617,7 +625,6 @@ function renderTopology() {
     }
   });
 
-  const container = document.getElementById('network-container');
   const options = {
     layout: { hierarchical: { enabled: true, direction: 'LR', sortMethod: 'directed', levelSeparation: 220, nodeSpacing: 100 } },
     physics: { enabled: false },
@@ -625,7 +632,12 @@ function renderTopology() {
     edges: { smooth: { type: 'cubicBezier', forceDirection: 'horizontal' } },
     nodes: { borderWidth: 1, shadow: { enabled: true, size: 6 } },
   };
-  network = new vis.Network(container, { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) }, options);
+  try {
+    network = new vis.Network(container, { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) }, options);
+  } catch (err) {
+    container.innerHTML = '<div style="padding:24px;color:var(--red);">Topologie konnte nicht gerendert werden.</div>';
+    console.error('Topology render error:', err);
+  }
 }
 
 // ─── Tables ──────────────────────────────────────────────────────────────────
