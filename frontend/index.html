@@ -279,6 +279,8 @@ let selectedServerId = null;
 let network = null;
 let editId = null;
 let editType = null;
+let serverModalSources = [];
+let serverModalSourceEditId = null;
 
 async function apiGetJson(url, fallback) {
   try {
@@ -784,6 +786,132 @@ function closeModalIfOutside(e) {
 function closeModal() {
   document.getElementById('modal-overlay').classList.remove('open');
   editId = null; editType = null;
+  serverModalSources = [];
+  serverModalSourceEditId = null;
+}
+
+function serverModalSourceById(id) {
+  return serverModalSources.find(s => s.id === id);
+}
+
+function resetServerSourceForm() {
+  const fields = ['fsrc-name', 'fsrc-path', 'fsrc-size', 'fsrc-desc'];
+  fields.forEach(id => { const el = g(id); if (el) el.value = ''; });
+  const typeEl = g('fsrc-type');
+  if (typeEl) typeEl.value = 'share';
+  serverModalSourceEditId = null;
+  const saveBtn = g('fsrc-save-btn');
+  if (saveBtn) saveBtn.textContent = '+ Quelle speichern';
+  const cancelBtn = g('fsrc-cancel-btn');
+  if (cancelBtn) cancelBtn.style.display = 'none';
+}
+
+function startEditServerSource(sourceId) {
+  const src = serverModalSourceById(sourceId);
+  if (!src) return;
+  serverModalSourceEditId = sourceId;
+  g('fsrc-name').value = src.name || '';
+  g('fsrc-type').value = src.type || 'share';
+  g('fsrc-path').value = src.path || '';
+  g('fsrc-size').value = src.size_gb ?? '';
+  g('fsrc-desc').value = src.description || '';
+  const saveBtn = g('fsrc-save-btn');
+  if (saveBtn) saveBtn.textContent = 'Quelle aktualisieren';
+  const cancelBtn = g('fsrc-cancel-btn');
+  if (cancelBtn) cancelBtn.style.display = 'inline-block';
+}
+
+function renderServerSourcesInModal() {
+  const box = g('server-sources-list');
+  if (!box) return;
+
+  if (!serverModalSources.length) {
+    box.innerHTML = '<div class="text-muted" style="padding:8px 0;">Noch keine Quellen vorhanden.</div>';
+    return;
+  }
+
+  box.innerHTML = serverModalSources.map(src => `
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border);">
+      <div>
+        <div><strong>${src.name}</strong> <span class="badge badge-config" style="margin-left:6px;">${src.type}</span></div>
+        <div class="text-muted" style="font-size:12px;margin-top:2px;">${src.path || '-'}${src.size_gb ? ` · ${src.size_gb} GB` : ''}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;">
+        <button class="btn btn-primary btn-sm" onclick="startEditServerSource(${src.id})">✏</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteServerSourceFromModal(${src.id})">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadServerSourcesForModal(serverId) {
+  serverModalSources = await apiGetJson(`${API}/servers/${serverId}/sources`, []);
+  renderServerSourcesInModal();
+}
+
+async function saveServerSourceFromModal() {
+  if (editType !== 'server' || !editId) {
+    toast('Server zuerst speichern', true);
+    return;
+  }
+  const name = g('fsrc-name')?.value?.trim();
+  if (!name) {
+    toast('Quellen-Name fehlt', true);
+    return;
+  }
+
+  const body = {
+    name,
+    type: g('fsrc-type').value,
+    path: g('fsrc-path').value || null,
+    size_gb: floatOrNull(g('fsrc-size').value),
+    description: g('fsrc-desc').value || null,
+  };
+
+  const url = serverModalSourceEditId
+    ? `${API}/servers/${editId}/sources/${serverModalSourceEditId}`
+    : `${API}/servers/${editId}/sources`;
+  const method = serverModalSourceEditId ? 'PUT' : 'POST';
+  const r = await fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    toast('Quelle konnte nicht gespeichert werden', true);
+    return;
+  }
+
+  resetServerSourceForm();
+  await loadServerSourcesForModal(editId);
+  await loadAll();
+  if (selectedServerId === editId) await loadServerData(selectedServerId);
+  renderStats();
+  renderServerSelector();
+  renderTables();
+  network = null;
+  toast('Quelle gespeichert ✓');
+}
+
+async function deleteServerSourceFromModal(sourceId) {
+  if (editType !== 'server' || !editId) return;
+  if (!confirm('Quelle wirklich löschen?')) return;
+
+  const r = await fetch(`${API}/servers/${editId}/sources/${sourceId}`, { method: 'DELETE' });
+  if (!r.ok) {
+    toast('Quelle konnte nicht gelöscht werden', true);
+    return;
+  }
+
+  if (serverModalSourceEditId === sourceId) resetServerSourceForm();
+  await loadServerSourcesForModal(editId);
+  await loadAll();
+  if (selectedServerId === editId) await loadServerData(selectedServerId);
+  renderStats();
+  renderServerSelector();
+  renderTables();
+  network = null;
+  toast('Quelle gelöscht');
 }
 
 function openModal(type, id = null) {
@@ -843,12 +971,42 @@ function openModal(type, id = null) {
             </label>
           </div>
         </div>
+        <div class="form-full" style="margin-top:8px;">
+          <label>Backup-Quellen direkt am Server</label>
+          ${id ? `
+            <div style="background:var(--bg3);padding:12px;border-radius:8px;border:1px solid var(--border);display:flex;flex-direction:column;gap:10px;">
+              <div id="server-sources-list"></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div><label>Name *</label><input id="fsrc-name" placeholder="z.B. /etc Backup"></div>
+                <div><label>Typ</label><select id="fsrc-type">
+                  ${['database','share','config','vm-full','system','kubernetes'].map(t => `<option value="${t}">${t}</option>`).join('')}
+                </select></div>
+                <div class="form-full"><label>Pfad</label><input id="fsrc-path" placeholder="/etc /home /var/lib/mysql"></div>
+                <div><label>Größe (GB)</label><input type="number" id="fsrc-size" placeholder="optional"></div>
+                <div class="form-full"><label>Beschreibung</label><textarea id="fsrc-desc" placeholder="Optionale Beschreibung"></textarea></div>
+              </div>
+              <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button type="button" class="btn btn-cancel" id="fsrc-cancel-btn" style="display:none;" onclick="resetServerSourceForm()">Abbrechen</button>
+                <button type="button" class="btn btn-primary" id="fsrc-save-btn" onclick="saveServerSourceFromModal()">+ Quelle speichern</button>
+              </div>
+            </div>
+          ` : `
+            <div style="background:var(--bg3);padding:10px 12px;border-radius:8px;border:1px solid var(--border);color:var(--text2);">
+              Quellen können nach dem ersten Speichern des Servers hier direkt verwaltet werden.
+            </div>
+          `}
+        </div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-cancel" onclick="closeModal()">Abbrechen</button>
         <button class="btn btn-primary" onclick="saveServer()">Speichern</button>
       </div>`;
     setTimeout(() => updateQuickConfig(), 10);
+    if (id) {
+      serverModalSourceEditId = null;
+      loadServerSourcesForModal(id);
+      setTimeout(() => resetServerSourceForm(), 20);
+    }
   } else if (type === 'source') {
     if (!selectedServerId) {
       toast('Bitte zuerst einen Server wählen', true);
