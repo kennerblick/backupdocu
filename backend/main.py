@@ -39,9 +39,10 @@ DEFAULT_SERVER_LOCATIONS = [
 DEFAULT_SERVER_FUNCTIONS = [
     {'id': 1, 'name': 'Webserver', 'description': 'HTTP/HTTPS Dienste'},
     {'id': 2, 'name': 'SFTP-Server', 'description': 'Dateiuebertragung via SFTP'},
-    {'id': 3, 'name': 'DNS', 'description': 'Namensauflösung im Netzwerk'},
-    {'id': 4, 'name': 'DHCP', 'description': 'Automatische IP-Adressvergabe'},
-    {'id': 5, 'name': 'Router', 'description': 'Routing zwischen Netzwerken'},
+    {'id': 3, 'name': 'Share', 'description': 'Dateifreigaben und Netzlaufwerke'},
+    {'id': 4, 'name': 'DNS', 'description': 'Namensauflösung im Netzwerk'},
+    {'id': 5, 'name': 'DHCP', 'description': 'Automatische IP-Adressvergabe'},
+    {'id': 6, 'name': 'Router', 'description': 'Routing zwischen Netzwerken'},
 ]
 
 DEFAULT_VIRTUALIZATION_TYPES = [
