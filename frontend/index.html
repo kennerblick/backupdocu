@@ -590,77 +590,57 @@ async function renderTopology() {
 
   const nodes = [];
   const edges = [];
+  const nodeIds = new Set();
 
-  // Server nodes
+  function addNode(node) {
+    if (nodeIds.has(node.id)) return;
+    nodeIds.add(node.id);
+    nodes.push(node);
+  }
+
+  function inferLocalTargetPath(job, source) {
+    const text = `${job?.name || ''} ${job?.notes || ''} ${source?.name || ''} ${source?.path || ''}`.toLowerCase();
+    if (text.includes('/backup-databases') || text.includes('/backup-database') || text.includes('db-dump') || source?.type === 'database') {
+      return '/backup-databases';
+    }
+    if (text.includes('/backup') || text.includes('systembackup') || source?.type === 'system') {
+      return '/backup';
+    }
+    return null;
+  }
+
   data.servers.forEach(s => {
-    nodes.push({
+    addNode({
       id: `srv-${s.id}`, label: s.name,
       title: `${s.hostname||''}\n${s.os||''}\n${s.role||''}`,
       group: 'server',
+      level: 0,
       color: { background: nodeColor('server', s.type), border: '#4a6fa0' },
       font: { color: '#e2e5f0', size: 12 },
       shape: 'box', margin: 8,
     });
   });
 
-  // Source and job nodes per server
-  topologyData.forEach(({ server, sources, jobs }) => {
-    sources.forEach(s => {
-      nodes.push({
-        id: `src-${server.id}-${s.id}`, label: s.name,
-        title: `Server: ${server.name}\nTyp: ${s.type}\nPfad: ${s.path || '-'}\n${s.description || ''}`,
-        group: 'source',
-        color: { background: nodeColor('source', s.type), border: '#4a6a9a' },
-        font: { color: '#e2e5f0', size: 11 },
-        shape: 'ellipse',
-      });
-      edges.push({ from: `srv-${server.id}`, to: `src-${server.id}-${s.id}`, color: { color: '#3a4a6a' }, arrows: 'to', width: 1 });
-    });
-
-    jobs.forEach(j => {
-      nodes.push({
-        id: `job-${server.id}-${j.id}`,
-        label: j.name,
-        title: `Server: ${server.name}\nZeitplan: ${j.schedule || '-'}\nStatus: ${j.status || '-'}\n${j.notes || ''}`,
-        group: 'job',
-        color: { background: '#263245', border: '#5c7aa1' },
-        font: { color: '#e2e5f0', size: 11 },
-        shape: 'box',
-        margin: 6,
-      });
-
-      if (j.source_id) {
-        edges.push({
-          from: `src-${server.id}-${j.source_id}`,
-          to: `job-${server.id}-${j.id}`,
-          color: { color: '#4a6a8a' },
-          arrows: 'to',
-          width: 2,
-        });
-      }
-    });
-  });
-
-  // Method nodes
   data.methods.forEach(m => {
-    nodes.push({
+    addNode({
       id: `mth-${m.id}`, label: m.name,
       title: `Typ: ${m.type}\n${m.description||''}`,
       group: 'method',
+      level: 3,
       color: { background: nodeColor('method', m.type), border: '#5a6a4a' },
       font: { color: '#e2e5f0', size: 11 },
       shape: 'diamond',
     });
   });
 
-  // Target nodes
   data.targets.forEach(t => {
     const isTape = t.type === 'tape-lto9';
     const isOffsite = t.type === 'offsite-rsync';
-    nodes.push({
+    addNode({
       id: `tgt-${t.id}`, label: t.name,
       title: `${t.hostname||''}\n${t.path||''}\nKapazität: ${t.capacity_tb||'?'} TB`,
       group: 'target',
+      level: 4,
       color: {
         background: nodeColor('target', t.type),
         border: isTape ? '#f97316' : isOffsite ? '#06b6d4' : '#5a6a8a'
@@ -671,43 +651,108 @@ async function renderTopology() {
     });
   });
 
-  // Job edges: source → job → method → primary_target
-  topologyData.forEach(({ server, jobs }) => jobs.forEach(j => {
-    if (j.method_id) {
-      edges.push({
-        from: `job-${server.id}-${j.id}`, to: `mth-${j.method_id}`,
-        label: j.schedule || '',
-        color: { color: '#4a7a4a' }, arrows: 'to', width: 2,
-        font: { color: '#8b92a8', size: 10, align: 'middle' },
+  topologyData.forEach(({ server, sources, jobs }) => {
+    const sourceMap = new Map(sources.map(source => [source.id, source]));
+
+    sources.forEach(source => {
+      addNode({
+        id: `src-${server.id}-${source.id}`,
+        label: source.name,
+        title: `Server: ${server.name}\nTyp: ${source.type}\nPfad: ${source.path || '-'}\n${source.description || ''}`,
+        group: 'source',
+        level: 1,
+        color: { background: nodeColor('source', source.type), border: '#4a6a9a' },
+        font: { color: '#e2e5f0', size: 11 },
+        shape: 'ellipse',
       });
-    }
-    if (j.primary_target_id) {
-      const from = j.method_id ? `mth-${j.method_id}` : `job-${server.id}-${j.id}`;
-      edges.push({
-        from, to: `tgt-${j.primary_target_id}`,
-        color: { color: '#4a7a4a' }, arrows: 'to', width: 2,
+      edges.push({ from: `srv-${server.id}`, to: `src-${server.id}-${source.id}`, color: { color: '#3a4a6a' }, arrows: 'to', width: 1 });
+    });
+
+    jobs.forEach(job => {
+      addNode({
+        id: `job-${server.id}-${job.id}`,
+        label: job.name,
+        title: `Server: ${server.name}\nZeitplan: ${job.schedule || '-'}\nStatus: ${job.status || '-'}\n${job.notes || ''}`,
+        group: 'job',
+        level: 2,
+        color: { background: '#263245', border: '#5c7aa1' },
+        font: { color: '#e2e5f0', size: 11 },
+        shape: 'box',
+        margin: 6,
       });
-    }
-    if (j.tape_target_id && j.primary_target_id) {
-      edges.push({
-        from: `tgt-${j.primary_target_id}`, to: `tgt-${j.tape_target_id}`,
-        label: j.gfs_policy || 'Tape',
-        color: { color: '#f97316' }, arrows: 'to', width: 3, dashes: false,
-        font: { color: '#f97316', size: 10 },
-      });
-    }
-    if (j.offsite_target_id && j.primary_target_id) {
-      edges.push({
-        from: `tgt-${j.primary_target_id}`, to: `tgt-${j.offsite_target_id}`,
-        label: 'Offsite',
-        color: { color: '#06b6d4' }, arrows: 'to', width: 3, dashes: true,
-        font: { color: '#06b6d4', size: 10 },
-      });
-    }
-  }));
+
+      if (job.source_id) {
+        edges.push({
+          from: `src-${server.id}-${job.source_id}`,
+          to: `job-${server.id}-${job.id}`,
+          color: { color: '#4a6a8a' },
+          arrows: 'to',
+          width: 2,
+        });
+      }
+
+      if (job.method_id) {
+        edges.push({
+          from: `job-${server.id}-${job.id}`,
+          to: `mth-${job.method_id}`,
+          label: job.schedule || '',
+          color: { color: '#4a7a4a' }, arrows: 'to', width: 2,
+          font: { color: '#8b92a8', size: 10, align: 'middle' },
+        });
+      }
+
+      const targetFrom = job.method_id ? `mth-${job.method_id}` : `job-${server.id}-${job.id}`;
+      if (job.primary_target_id) {
+        edges.push({
+          from: targetFrom,
+          to: `tgt-${job.primary_target_id}`,
+          color: { color: '#4a7a4a' }, arrows: 'to', width: 2,
+        });
+      } else {
+        const localPath = inferLocalTargetPath(job, sourceMap.get(job.source_id));
+        if (localPath) {
+          const localNodeId = `local-${server.id}-${localPath.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}`;
+          addNode({
+            id: localNodeId,
+            label: `lokal\n${localPath}`,
+            title: `Lokales Backup-Ziel auf ${server.name}\nPfad: ${localPath}`,
+            group: 'target',
+            level: 4,
+            color: { background: nodeColor('target', 'local'), border: '#8b92a8' },
+            font: { color: '#e2e5f0', size: 11 },
+            shape: 'database',
+          });
+          edges.push({
+            from: targetFrom,
+            to: localNodeId,
+            label: 'lokal',
+            color: { color: '#8b92a8' }, arrows: 'to', width: 2,
+            font: { color: '#8b92a8', size: 10 },
+          });
+        }
+      }
+
+      if (job.tape_target_id && job.primary_target_id) {
+        edges.push({
+          from: `tgt-${job.primary_target_id}`, to: `tgt-${job.tape_target_id}`,
+          label: job.gfs_policy || 'Tape',
+          color: { color: '#f97316' }, arrows: 'to', width: 3, dashes: false,
+          font: { color: '#f97316', size: 10 },
+        });
+      }
+      if (job.offsite_target_id && job.primary_target_id) {
+        edges.push({
+          from: `tgt-${job.primary_target_id}`, to: `tgt-${job.offsite_target_id}`,
+          label: 'Offsite',
+          color: { color: '#06b6d4' }, arrows: 'to', width: 3, dashes: true,
+          font: { color: '#06b6d4', size: 10 },
+        });
+      }
+    });
+  });
 
   const options = {
-    layout: { hierarchical: { enabled: true, direction: 'LR', sortMethod: 'directed', levelSeparation: 220, nodeSpacing: 100 } },
+    layout: { hierarchical: { enabled: true, direction: 'LR', sortMethod: 'directed', levelSeparation: 210, nodeSpacing: 130, treeSpacing: 180 } },
     physics: { enabled: false },
     interaction: { tooltipDelay: 200, hover: true, navigationButtons: true, keyboard: true },
     edges: { smooth: { type: 'cubicBezier', forceDirection: 'horizontal' } },
@@ -1071,7 +1116,7 @@ function openModal(type, id = null) {
             </label>
             <label id="qc-db-label" style="display:flex;align-items:flex-start;gap:8px;line-height:1.5;opacity:0.4;cursor:not-allowed;">
               <input type="checkbox" id="qc-dbdump" disabled style="margin-top:3px;">
-              <span><strong>DB-Dump lokal anlegen</strong><br><span style="color:var(--text2);font-size:12px;">Quelle: DB-Dump komprimiert &nbsp;·&nbsp; Methode: pg_dump &nbsp;·&nbsp; Ziel: /backup-database &nbsp;·&nbsp; Zeitplan: täglich &nbsp;·&nbsp; Aufbewahrung: 3 Tage &nbsp;<em style="color:var(--yellow)">(Funktion „DB" aktivieren)</em></span></span>
+              <span><strong>DB-Dump lokal anlegen</strong><br><span style="color:var(--text2);font-size:12px;">Quelle: DB-Dump komprimiert &nbsp;·&nbsp; Methode: pg_dump &nbsp;·&nbsp; Ziel: /backup-databases &nbsp;·&nbsp; Zeitplan: täglich &nbsp;·&nbsp; Aufbewahrung: 3 Tage &nbsp;<em style="color:var(--yellow)">(Funktion „DB" aktivieren)</em></span></span>
             </label>
           </div>
         </div>
@@ -1282,8 +1327,8 @@ async function saveServer() {
     }
     if (qcDb) {
       const ok = await createQuickJob(serverId, existingSources, existingJobs,
-        'database', 'DB-Dump lokal', '/backup-database', 'Lokaler Datenbankdump, komprimiert',
-        'pg_dump', 'DB-Dump täglich', 'Dump nach /backup-database');
+        'database', 'DB-Dump lokal', '/backup-databases', 'Lokaler Datenbankdump, komprimiert',
+        'pg_dump', 'DB-Dump täglich', 'Dump nach /backup-databases');
       if (ok) created++;
     }
   }
