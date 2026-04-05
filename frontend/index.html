@@ -621,17 +621,7 @@ async function renderTopology() {
     });
   });
 
-  data.methods.forEach(m => {
-    addNode({
-      id: `mth-${m.id}`, label: m.name,
-      title: `Typ: ${m.type}\n${m.description||''}`,
-      group: 'method',
-      level: 3,
-      color: { background: nodeColor('method', m.type), border: '#5a6a4a' },
-      font: { color: '#e2e5f0', size: 11 },
-      shape: 'diamond',
-    });
-  });
+  // Method nodes are created per job to keep each flow aligned in one row.
 
   data.targets.forEach(t => {
     const isTape = t.type === 'tape-lto9';
@@ -669,8 +659,12 @@ async function renderTopology() {
     });
 
     jobs.forEach(job => {
+      const jobNodeId = `job-${server.id}-${job.id}`;
+      const method = data.methods.find(m => m.id === job.method_id);
+      const methodNodeId = method ? `mth-${server.id}-${job.id}-${method.id}` : null;
+
       addNode({
-        id: `job-${server.id}-${job.id}`,
+        id: jobNodeId,
         label: job.name,
         title: `Server: ${server.name}\nZeitplan: ${job.schedule || '-'}\nStatus: ${job.status || '-'}\n${job.notes || ''}`,
         group: 'job',
@@ -684,24 +678,35 @@ async function renderTopology() {
       if (job.source_id) {
         edges.push({
           from: `src-${server.id}-${job.source_id}`,
-          to: `job-${server.id}-${job.id}`,
+          to: jobNodeId,
           color: { color: '#4a6a8a' },
           arrows: 'to',
           width: 2,
         });
       }
 
-      if (job.method_id) {
+      let targetFrom = jobNodeId;
+      if (method && methodNodeId) {
+        addNode({
+          id: methodNodeId,
+          label: method.name,
+          title: `Server: ${server.name}\nTyp: ${method.type}\n${method.description || ''}`,
+          group: 'method',
+          level: 3,
+          color: { background: nodeColor('method', method.type), border: '#5a6a4a' },
+          font: { color: '#e2e5f0', size: 11 },
+          shape: 'diamond',
+        });
         edges.push({
-          from: `job-${server.id}-${job.id}`,
-          to: `mth-${job.method_id}`,
+          from: jobNodeId,
+          to: methodNodeId,
           label: job.schedule || '',
           color: { color: '#4a7a4a' }, arrows: 'to', width: 2,
           font: { color: '#8b92a8', size: 10, align: 'middle' },
         });
+        targetFrom = methodNodeId;
       }
 
-      const targetFrom = job.method_id ? `mth-${job.method_id}` : `job-${server.id}-${job.id}`;
       if (job.primary_target_id) {
         edges.push({
           from: targetFrom,
@@ -711,7 +716,7 @@ async function renderTopology() {
       } else {
         const localPath = inferLocalTargetPath(job, sourceMap.get(job.source_id));
         if (localPath) {
-          const localNodeId = `local-${server.id}-${localPath.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')}`;
+          const localNodeId = `local-${server.id}-${job.id}`;
           addNode({
             id: localNodeId,
             label: `lokal\n${localPath}`,
@@ -752,7 +757,19 @@ async function renderTopology() {
   });
 
   const options = {
-    layout: { hierarchical: { enabled: true, direction: 'LR', sortMethod: 'directed', levelSeparation: 210, nodeSpacing: 130, treeSpacing: 180 } },
+    layout: {
+      hierarchical: {
+        enabled: true,
+        direction: 'LR',
+        sortMethod: 'directed',
+        levelSeparation: 210,
+        nodeSpacing: 130,
+        treeSpacing: 180,
+        blockShifting: false,
+        edgeMinimization: false,
+        parentCentralization: false,
+      }
+    },
     physics: { enabled: false },
     interaction: { tooltipDelay: 200, hover: true, navigationButtons: true, keyboard: true },
     edges: { smooth: { type: 'cubicBezier', forceDirection: 'horizontal' } },
