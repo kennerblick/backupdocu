@@ -260,7 +260,7 @@ textarea { resize: vertical; min-height: 60px; }
 
 <script>
 const API = '/api';
-let data = { servers: [], methods: [], targets: [], backupTypes: [], virtualizationTypes: [], serverLocations: [] };
+let data = { servers: [], methods: [], targets: [], backupTypes: [], virtualizationTypes: [], osTypes: [], serverLocations: [] };
 let currentServerData = { sources: [], jobs: [] };
 let selectedServerId = null;
 let network = null;
@@ -269,10 +269,16 @@ let editType = null;
 let serverModalSources = [];
 let serverModalSourceEditId = null;
 const DEFAULT_VIRTUALIZATION_OPTIONS = ['HyperV', 'Docker', 'Proxmox', 'Kubernetes', 'VMware'];
+const DEFAULT_OS_OPTIONS = ['HyperV', 'Windows', 'Windows Server', 'Debian', 'Ubuntu', 'Proxmox', 'anderes'];
 
 function getVirtualizationOptions() {
   const names = (data.virtualizationTypes || []).map(v => v.name).filter(Boolean);
   return names.length ? names : DEFAULT_VIRTUALIZATION_OPTIONS;
+}
+
+function getOsOptions() {
+  const names = (data.osTypes || []).map(v => v.name).filter(Boolean);
+  return names.length ? names : DEFAULT_OS_OPTIONS;
 }
 
 function normalizeVirtualizationValue(value) {
@@ -329,7 +335,7 @@ async function init() {
 }
 
 async function loadAll() {
-  const [servers, methods, targets, backupTypes, virtualizationTypes, stats, serverFunctions, serverLocations] = await Promise.all([
+  const [servers, methods, targets, backupTypes, virtualizationTypes, osTypes, stats, serverFunctions, serverLocations] = await Promise.all([
     apiGetJson(`${API}/servers`, []),
     apiGetJson(`${API}/methods`, []),
     apiGetJson(`${API}/targets`, []),
@@ -346,12 +352,22 @@ async function loadAll() {
       { id: 2, name: 'Docker' },
       { id: 3, name: 'Proxmox' },
       { id: 4, name: 'Kubernetes' },
+      { id: 5, name: 'VMware' },
+    ]),
+    apiGetJson(`${API}/os-types`, [
+      { id: 1, name: 'HyperV' },
+      { id: 2, name: 'Windows' },
+      { id: 3, name: 'Windows Server' },
+      { id: 4, name: 'Debian' },
+      { id: 5, name: 'Ubuntu' },
+      { id: 6, name: 'Proxmox' },
+      { id: 7, name: 'anderes' },
     ]),
     apiGetJson(`${API}/stats`, {}),
     apiGetJson(`${API}/server-functions`, []),
     apiGetJson(`${API}/server-locations`, []),
   ]);
-  data = { servers, methods, targets, backupTypes, virtualizationTypes, stats, serverFunctions, serverLocations };
+  data = { servers, methods, targets, backupTypes, virtualizationTypes, osTypes, stats, serverFunctions, serverLocations };
 }
 
 async function loadServerData(serverId) {
@@ -1103,6 +1119,10 @@ function openModal(type, id = null) {
   if (type === 'server') {
     const serverFunctions = (data.serverFunctions || []).filter(fn => !normalizeVirtualizationValue(fn.name));
     const virtualizationValue = extractVirtualization(obj);
+    const osOptions = Array.from(new Set([
+      ...getOsOptions(),
+      ...(obj?.os ? [obj.os] : []),
+    ]));
     const locationNames = Array.from(new Set([
       ...(data.serverLocations || []).map(l => l.name),
       ...(obj?.location ? [obj.location] : []),
@@ -1116,7 +1136,10 @@ function openModal(type, id = null) {
           ${['physical','vm-proxmox','vm-hyperv','container','cloud'].map(t =>
             `<option value="${t}" ${obj?.type===t?'selected':''}>${t}</option>`).join('')}
         </select></div>
-        <div><label>OS</label><input id="f-os" value="${obj?.os||''}" oninput="updateQuickConfig()"></div>
+        <div><label>Betriebssystem</label><select id="f-os" onchange="updateQuickConfig()">
+          <option value="">-</option>
+          ${osOptions.map(os => `<option value="${os}" ${obj?.os===os?'selected':''}>${os}</option>`).join('')}
+        </select></div>
         <div class="form-full"><label>Rolle</label><input id="f-role" value="${obj?.role||''}"></div>
         <div><label>Standort</label><select id="f-location">
           ${locationNames.map(loc => `<option value="${loc}" ${obj?.location===loc?'selected':''}>${loc}</option>`).join('')}

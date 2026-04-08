@@ -28,6 +28,7 @@ GLOBAL_FILES = {
 
 BACKUP_TYPES_FILE = CONFIG_DIR / 'backup-types.json'
 VIRTUALIZATION_TYPES_FILE = CONFIG_DIR / 'virtualization-types.json'
+OS_TYPES_FILE = CONFIG_DIR / 'os-types.json'
 
 DEFAULT_SERVER_LOCATIONS = [
     {'id': 1, 'name': 'extern'},
@@ -51,6 +52,16 @@ DEFAULT_VIRTUALIZATION_TYPES = [
     {'id': 3, 'name': 'Proxmox'},
     {'id': 4, 'name': 'Kubernetes'},
     {'id': 5, 'name': 'VMware'},
+]
+
+DEFAULT_OS_TYPES = [
+    {'id': 1, 'name': 'HyperV'},
+    {'id': 2, 'name': 'Windows'},
+    {'id': 3, 'name': 'Windows Server'},
+    {'id': 4, 'name': 'Debian'},
+    {'id': 5, 'name': 'Ubuntu'},
+    {'id': 6, 'name': 'Proxmox'},
+    {'id': 7, 'name': 'anderes'},
 ]
 
 # Initialize global files
@@ -90,6 +101,12 @@ if not BACKUP_TYPES_FILE.exists():
 if not VIRTUALIZATION_TYPES_FILE.exists():
     VIRTUALIZATION_TYPES_FILE.write_text(
         json.dumps(DEFAULT_VIRTUALIZATION_TYPES, indent=2, ensure_ascii=False),
+        encoding='utf-8'
+    )
+
+if not OS_TYPES_FILE.exists():
+    OS_TYPES_FILE.write_text(
+        json.dumps(DEFAULT_OS_TYPES, indent=2, ensure_ascii=False),
         encoding='utf-8'
     )
 
@@ -295,6 +312,17 @@ def load_virtualization_types() -> List[Dict[str, Any]]:
     except (json.JSONDecodeError, FileNotFoundError):
         pass
     return DEFAULT_VIRTUALIZATION_TYPES
+
+
+def load_os_types() -> List[Dict[str, Any]]:
+    """Load OS types from config-data."""
+    try:
+        data = json.loads(OS_TYPES_FILE.read_text(encoding='utf-8'))
+        if isinstance(data, list):
+            return data
+    except (json.JSONDecodeError, FileNotFoundError):
+        pass
+    return DEFAULT_OS_TYPES
 
 
 def virtualization_name_lookup() -> Dict[str, str]:
@@ -509,6 +537,11 @@ def list_backup_types():
 @app.get('/api/virtualization-types')
 def list_virtualization_types():
     return load_virtualization_types()
+
+
+@app.get('/api/os-types')
+def list_os_types():
+    return load_os_types()
 
 
 @app.get('/api/methods/{method_id}')

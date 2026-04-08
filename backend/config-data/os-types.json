@@ -1,0 +1,30 @@
+[
+  {
+    "id": 1,
+    "name": "HyperV"
+  },
+  {
+    "id": 2,
+    "name": "Windows"
+  },
+  {
+    "id": 3,
+    "name": "Windows Server"
+  },
+  {
+    "id": 4,
+    "name": "Debian"
+  },
+  {
+    "id": 5,
+    "name": "Ubuntu"
+  },
+  {
+    "id": 6,
+    "name": "Proxmox"
+  },
+  {
+    "id": 7,
+    "name": "anderes"
+  }
+]
