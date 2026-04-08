@@ -123,15 +123,14 @@ textarea { resize: vertical; min-height: 60px; }
   <h1>Backup<span>Docu</span></h1>
   <div class="stats-bar" id="stats-bar"></div>
   <div class="nav-tabs">
-    <button class="nav-tab active" onclick="switchView('topology')">🗺 Topologie</button>
-    <button class="nav-tab" onclick="switchView('servers')">🖥 Server</button>
-    <button class="nav-tab" onclick="switchView('tree')">🌳 Baum</button>
-    <button class="nav-tab" onclick="switchView('targets')">🗄 Targets</button>
-    <button class="nav-tab" onclick="switchView('table')">📋 Backup-Flow</button>
+    <button class="nav-tab active" onclick="switchView('topology')">Topologie</button>
+    <button class="nav-tab" onclick="switchView('servers')">Server</button>
+    <button class="nav-tab" onclick="switchView('tree')">Baum</button>
+    <button class="nav-tab" onclick="switchView('targets')">Targets</button>
+    <button class="nav-tab" onclick="switchView('table')">Backup-Flow</button>
   </div>
 </header>
 <main>
-  <!-- Topology View -->
   <div class="view active" id="view-topology">
     <div id="network-container"></div>
     <div class="topo-legend">
@@ -162,7 +161,6 @@ textarea { resize: vertical; min-height: 60px; }
     </div>
   </div>
 
-  <!-- Server View -->
   <div class="view" id="view-servers">
     <div style="padding: 20px; gap: 12px; display: flex; flex-direction: column; height: 100%; min-height: 0;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -185,17 +183,14 @@ textarea { resize: vertical; min-height: 60px; }
     </div>
   </div>
 
-  <!-- Tree View -->
   <div class="view" id="view-tree">
     <div style="padding: 20px; gap: 12px; display: flex; flex-direction: column;">
       <h2 style="margin: 0 0 16px 0; color: var(--accent);">Backup-Hierarchie</h2>
       <div id="tree-container" style="background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px;">
-        <!-- Tree structure will be rendered here -->
       </div>
     </div>
   </div>
 
-  <!-- Targets View -->
   <div class="view" id="view-targets">
     <div style="padding: 20px; gap: 12px; display: flex; flex-direction: column;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -211,10 +206,8 @@ textarea { resize: vertical; min-height: 60px; }
     </div>
   </div>
 
-  <!-- Backup-Flow View -->
   <div class="view" id="view-table">
 
-    <!-- Server Selector -->
     <div style="background: var(--bg2); border-bottom: 1px solid var(--border); padding: 16px 20px; display: flex; gap: 16px; align-items: center;">
       <label style="color: var(--text2); font-size: 13px; font-weight: 600;">Markierter Server:</label>
       <select id="server-selector" style="flex: 0 0 280px; background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 10px; cursor: pointer;" onchange="selectServer(this.value)">
@@ -227,7 +220,7 @@ textarea { resize: vertical; min-height: 60px; }
       <div class="section-header">
         <div style="display:flex;align-items:center">
           <span class="chevron">▼</span>
-          <h2>📦 Backup-Quellen</h2>
+          <h2>Backup-Quellen</h2>
         </div>
         <div class="section-content" onclick="event.stopPropagation()">
           <button class="btn btn-primary" onclick="openModal('source')">+ Quelle</button>
@@ -239,12 +232,11 @@ textarea { resize: vertical; min-height: 60px; }
       </table>
     </div>
 
-    <!-- Backup Jobs (Server-spezifisch) -->
     <div class="section collapsed" onclick="toggleSection(this)" id="jobs-section">
       <div class="section-header">
         <div style="display:flex;align-items:center">
           <span class="chevron">▼</span>
-          <h2>🔄 Backup-Jobs</h2>
+          <h2>Backup-Jobs</h2>
         </div>
         <div class="section-content" onclick="event.stopPropagation()">
           <button class="btn btn-primary" onclick="openModal('job')">+ Job</button>
@@ -260,7 +252,6 @@ textarea { resize: vertical; min-height: 60px; }
 </main>
 </div>
 
-<!-- Modals -->
 <div class="modal-overlay" id="modal-overlay" onclick="closeModalIfOutside(event)">
   <div class="modal" id="modal-content"></div>
 </div>
@@ -322,8 +313,6 @@ async function apiGetJson(url, fallback) {
   }
 }
 
-// ─── Init ────────────────────────────────────────────────────────────────────
-
 async function init() {
   await loadAll();
   renderStats();
@@ -377,8 +366,6 @@ async function loadServerData(serverId) {
   currentServerData = { sources, jobs };
 }
 
-// ─── Server Selection ─────────────────────────────────────────────────────────
-
 async function selectServer(serverId) {
   selectedServerId = serverId ? parseInt(serverId) : null;
   await loadServerData(selectedServerId);
@@ -413,8 +400,6 @@ function renderServerSelector() {
   }
 }
 
-// ─── Stats ───────────────────────────────────────────────────────────────────
-
 function renderStats() {
   const s = data.stats || {};
   document.getElementById('stats-bar').innerHTML = `
@@ -425,8 +410,6 @@ function renderStats() {
     <div class="stat"><div class="stat-val" style="color:var(--offsite)">${s.jobs_with_offsite||0}</div><div class="stat-lbl">mit Offsite</div></div>
   `;
 }
-
-// ─── View Switching ──────────────────────────────────────────────────────────
 
 function switchView(view, event = null) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -441,8 +424,6 @@ function switchView(view, event = null) {
   else if (view === 'targets') renderTargets();
   else if (view === 'table') renderTables();
 }
-
-// ─── Tree View ─────────────────────────────────────────────────────────────
 
 async function renderTree() {
   const container = document.getElementById('tree-container');
@@ -462,7 +443,7 @@ async function renderTree() {
     // Build tree HTML
     let html = '';
     for (const { server, sources } of allServerData) {
-      const serverIcon = server.type === 'physical' ? '🖥' : server.type === 'vm-proxmox' ? '📦' : server.type === 'vm-hyperv' ? '🖱' : '☁';
+      const serverIcon = server.type === 'physical' ? 'SRV' : server.type === 'vm-proxmox' ? 'VM' : server.type === 'vm-hyperv' ? 'HV' : 'CLD';
       html += `
         <div class="tree-node server" onclick="editFromTree('server', null, ${server.id})" style="cursor: pointer;">
           <span class="tree-toggle" onclick="toggleTreeNode(this); event.stopPropagation()">+</span>
@@ -473,7 +454,7 @@ async function renderTree() {
 
       // Sources directly (no intermediate "Backup-Quellen" node)
       for (const source of sources) {
-        const typeIcon = source.type === 'database' ? '🗄' : source.type === 'share' ? '📁' : source.type === 'config' ? '⚙' : '📄';
+        const typeIcon = source.type === 'database' ? 'DB' : source.type === 'share' ? 'SHR' : source.type === 'config' ? 'CFG' : 'SRC';
         html += `
           <div class="tree-node source" onclick="editFromTree('source', ${server.id}, ${source.id}); event.stopPropagation()" style="cursor: pointer; margin-left: 20px;">
             <span class="tree-content">${typeIcon} ${source.name}</span>
@@ -543,8 +524,6 @@ async function editFromTree(type, serverId, itemId) {
     openModal('job', itemId);
   }
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const serverById = id => data.servers.find(s => s.id === id);
 const sourceById = id => currentServerData.sources.find(s => s.id === id);
@@ -782,8 +761,6 @@ async function renderTopology() {
   }
 }
 
-// ─── Tables ──────────────────────────────────────────────────────────────────
-
 function renderTables() {
   renderSources();
   renderJobs();
@@ -829,8 +806,8 @@ function renderServers() {
         <td>${(s.functions||[]).map(f => `<span class="badge badge-active" style="margin:1px 2px;">${f}</span>`).join('') || '-'}</td>
         <td class="text-muted">${extractVirtualization(s) || '-'}</td>
         <td class="text-muted">${s.location || '-'}</td>
-        <td><button class="btn btn-primary btn-sm" onclick="openModal('server',${s.id})">✏</button>
-            <button class="btn btn-danger btn-sm" onclick="del('servers',${s.id})">✕</button></td>
+        <td><button class="btn btn-primary btn-sm" onclick="openModal('server',${s.id})">Bearbeiten</button>
+          <button class="btn btn-danger btn-sm" onclick="del('servers',${s.id})">Loeschen</button></td>
       </tr>`).join('');
     return `
       <tr>
@@ -850,8 +827,8 @@ function renderSources() {
     <td class="font-mono text-muted">${s.path || '-'}</td>
     <td class="text-muted">${s.size_gb ? s.size_gb + ' GB' : '-'}</td>
     <td class="text-muted">${s.description || ''}</td>
-    <td><button class="btn btn-primary btn-sm" onclick="openModal('source',${s.id})">✏</button>
-        <button class="btn btn-danger btn-sm" onclick="del('sources',${s.id})">✕</button></td>
+    <td><button class="btn btn-primary btn-sm" onclick="openModal('source',${s.id})">Bearbeiten</button>
+      <button class="btn btn-danger btn-sm" onclick="del('sources',${s.id})">Loeschen</button></td>
   </tr>`).join('');
 }
 
@@ -875,8 +852,8 @@ function renderTargets() {
       <td class="font-mono text-muted">${t.path || '-'}</td>
       <td class="text-muted">${t.capacity_tb ? t.capacity_tb + ' TB' : '-'}</td>
       <td class="text-muted">${t.description || ''}</td>
-      <td><button class="btn btn-primary btn-sm" onclick="openModal('target',${t.id})">✏</button>
-          <button class="btn btn-danger btn-sm" onclick="del('targets',${t.id})">✕</button></td>
+        <td><button class="btn btn-primary btn-sm" onclick="openModal('target',${t.id})">Bearbeiten</button>
+          <button class="btn btn-danger btn-sm" onclick="del('targets',${t.id})">Loeschen</button></td>
     </tr>`).join('');
 }
 
@@ -888,25 +865,23 @@ function renderJobs() {
     const pt = targetById(j.primary_target_id);
     const tiers = `
       <div class="tier-icons">
-        ${pt ? `<div class="tier-icon tier-primary" title="Primär: ${pt.name}">🗄</div>` : ''}
-        ${j.tape_target_id ? `<div class="tier-icon tier-tape" title="Tape: ${(targetById(j.tape_target_id)||{}).name}">📼</div>` : ''}
-        ${j.offsite_target_id ? `<div class="tier-icon tier-offsite" title="Offsite: ${(targetById(j.offsite_target_id)||{}).name}">🌐</div>` : ''}
+        ${pt ? `<div class="tier-icon tier-primary" title="Primaer: ${pt.name}">T1</div>` : ''}
+        ${j.tape_target_id ? `<div class="tier-icon tier-tape" title="Tape: ${(targetById(j.tape_target_id)||{}).name}">T2</div>` : ''}
+        ${j.offsite_target_id ? `<div class="tier-icon tier-offsite" title="Offsite: ${(targetById(j.offsite_target_id)||{}).name}">T3</div>` : ''}
       </div>`;
     return `<tr>
-      <td><strong>${j.name}</strong>${j.is_encrypted ? ' 🔒' : ''}</td>
+      <td><strong>${j.name}</strong>${j.is_encrypted ? ' [enc]' : ''}</td>
       <td>${src ? src.name : '?'}</td>
       <td>${mth ? mth.name : '-'}</td>
       <td class="text-muted">${pt ? pt.name : '-'}</td>
       <td>${tiers}</td>
       <td class="text-muted font-mono">${j.schedule || '-'}</td>
       <td>${badge(j.status, statusColor[j.status] || 'config')}</td>
-      <td><button class="btn btn-primary btn-sm" onclick="openModal('job',${j.id})">✏</button>
-          <button class="btn btn-danger btn-sm" onclick="del('jobs',${j.id})">✕</button></td>
+        <td><button class="btn btn-primary btn-sm" onclick="openModal('job',${j.id})">Bearbeiten</button>
+          <button class="btn btn-danger btn-sm" onclick="del('jobs',${j.id})">Loeschen</button></td>
     </tr>`;
   }).join('');
 }
-
-// ─── Delete ───────────────────────────────────────────────────────────────────
 
 async function del(entity, id) {
   if (!confirm('Wirklich löschen?')) return;
@@ -932,8 +907,6 @@ async function del(entity, id) {
   renderTables();
   network = null;
 }
-
-// ─── Modals ──────────────────────────────────────────────────────────────────
 
 function closeModalIfOutside(e) {
   if (e.target === document.getElementById('modal-overlay')) closeModal();
@@ -992,8 +965,8 @@ function renderServerSourcesInModal() {
         <div class="text-muted" style="font-size:12px;margin-top:2px;">${src.path || '-'}${src.size_gb ? ` · ${src.size_gb} GB` : ''}</div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
-        <button class="btn btn-primary btn-sm" onclick="startEditServerSource(${src.id})">✏</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteServerSourceFromModal(${src.id})">✕</button>
+        <button class="btn btn-primary btn-sm" onclick="startEditServerSource(${src.id})">Bearbeiten</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteServerSourceFromModal(${src.id})">Loeschen</button>
       </div>
     </div>
   `).join('');
@@ -1120,7 +1093,7 @@ function openModal(type, id = null) {
           </div>
         </div>
         <div class="form-full" id="quickconfig-section" style="display:none;">
-          <label style="font-size:12px;color:var(--text2);margin-bottom:8px;display:block;">⚡ Schnellkonfiguration Linux – Jobs automatisch anlegen</label>
+          <label style="font-size:12px;color:var(--text2);margin-bottom:8px;display:block;">Schnellkonfiguration Linux - Jobs automatisch anlegen</label>
           <div style="background:var(--bg3);padding:12px;border-radius:8px;border:1px solid var(--border);display:flex;flex-direction:column;gap:10px;">
             <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;line-height:1.5;">
               <input type="checkbox" id="qc-sysbackup" style="margin-top:3px;">
@@ -1235,10 +1208,10 @@ function openModal(type, id = null) {
         <div><label>Primär-Ziel</label><select id="f-ptarget">${noSel}
           ${data.targets.map(t => `<option value="${t.id}" ${obj?.primary_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
         </select></div>
-        <div><label>🟠 Tape-Ziel (2. Tier)</label><select id="f-ttarget">${noSel}
+        <div><label>Tape-Ziel (2. Tier)</label><select id="f-ttarget">${noSel}
           ${data.targets.filter(t=>t.type==='tape-lto9').map(t => `<option value="${t.id}" ${obj?.tape_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
         </select></div>
-        <div><label>🔵 Offsite-Ziel (3. Tier)</label><select id="f-otarget">${noSel}
+        <div><label>Offsite-Ziel (3. Tier)</label><select id="f-otarget">${noSel}
           ${data.targets.filter(t=>['offsite-rsync','s3'].includes(t.type)).map(t => `<option value="${t.id}" ${obj?.offsite_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
         </select></div>
         <div><label>Zeitplan</label><input id="f-sched" placeholder="täglich 02:00 / 0 2 * * *" value="${obj?.schedule||''}"></div>
@@ -1413,8 +1386,6 @@ async function saveJob() {
   renderTables();
   network = null;
 }
-
-// ─── Toast ────────────────────────────────────────────────────────────────────
 
 function toast(msg, isError = false) {
   const el = document.getElementById('toast');
