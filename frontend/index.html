@@ -129,11 +129,6 @@ textarea { resize: vertical; min-height: 60px; }
     <button class="nav-tab" onclick="switchView('targets')">🗄 Targets</button>
     <button class="nav-tab" onclick="switchView('table')">📋 Backup-Flow</button>
   </div>
-  <div style="margin-left: 16px; display: flex; gap: 8px;">
-    <button class="btn btn-primary btn-sm" onclick="exportJSON()">📤 Export JSON</button>
-    <button class="btn btn-primary btn-sm" onclick="document.getElementById('json-import').click()">📥 Import JSON</button>
-    <input id="json-import" type="file" accept="application/json" style="display:none" onchange="importJSON(event)">
-  </div>
 </header>
 <main>
   <!-- Topology View -->
@@ -1417,55 +1412,6 @@ async function saveJob() {
   renderStats();
   renderTables();
   network = null;
-}
-
-// ─── Export/Import ───────────────────────────────────────────────────────────
-
-function exportJSON() {
-  const allSources = [];
-  const allJobs = [];
-  
-  for (const server of data.servers) {
-    const sources = DataStore?.load_server_data?.(server.id, 'sources') || [];
-    const jobs = DataStore?.load_server_data?.(server.id, 'jobs') || [];
-    allSources.push(...sources);
-    allJobs.push(...jobs);
-  }
-  
-  const payload = {
-    exported_at: new Date().toISOString(),
-    servers: data.servers,
-    sources: currentServerData.sources,
-    methods: data.methods,
-    targets: data.targets,
-    jobs: currentServerData.jobs,
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `backupdocu_export_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  toast('Exportierte JSON-Datei erstellt');
-}
-
-function importJSON(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const imported = JSON.parse(reader.result);
-      // Don't import directly - show message
-      toast('Import: Bitte über API durchführen oder einzeln eintragen', true);
-    } catch (err) {
-      toast('Import fehlgeschlagen: ungültiges JSON', true);
-    }
-  };
-  reader.readAsText(file);
 }
 
 // ─── Toast ────────────────────────────────────────────────────────────────────
