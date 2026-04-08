@@ -1,0 +1,38 @@
+[
+  {
+    "name": "Systembackup täglich",
+    "source_id": 1,
+    "method_id": 3,
+    "primary_target_id": null,
+    "tape_target_id": null,
+    "offsite_target_id": null,
+    "schedule": null,
+    "retention": null,
+    "gfs_policy": null,
+    "is_encrypted": false,
+    "is_compressed": true,
+    "status": "active",
+    "notes": "Backup nach /backup",
+    "id": 1,
+    "created_at": "2026-03-31T12:01:06.248212",
+    "updated_at": "2026-03-31T12:01:06.248220"
+  },
+  {
+    "name": "Sharebackup",
+    "source_id": 2,
+    "method_id": 1,
+    "primary_target_id": 2,
+    "tape_target_id": null,
+    "offsite_target_id": null,
+    "schedule": "täglich",
+    "retention": "4 Tage",
+    "gfs_policy": null,
+    "is_encrypted": true,
+    "is_compressed": true,
+    "status": "active",
+    "notes": null,
+    "id": 2,
+    "created_at": "2026-03-31T12:03:41.465015",
+    "updated_at": "2026-03-31T12:03:41.465038"
+  }
+]
