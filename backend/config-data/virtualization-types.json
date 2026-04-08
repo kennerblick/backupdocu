@@ -14,5 +14,9 @@
   {
     "id": 4,
     "name": "Kubernetes"
+  },
+  {
+    "id": 5,
+    "name": "VMware"
   }
 ]

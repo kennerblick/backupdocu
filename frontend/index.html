@@ -154,10 +154,10 @@ textarea { resize: vertical; min-height: 60px; }
       <div class="legend-item"><div class="legend-dot" style="background:#2a1a4a"></div>Backup-Server</div>
       <br>
       <h3>Methoden</h3>
-      <div class="legend-item"><div class="legend-dot" style="background:#2a4a2a"></div>Veeam Agent</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#3a4a1a"></div>Veeam B&R</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#2a4a2a"></div>local backupagent</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3a4a1a"></div>central backup mgmt</div>
       <div class="legend-item"><div class="legend-dot" style="background:#1a2a4a"></div>rsync</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#4a3a1a"></div>Bash / pg_dump</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#4a3a1a"></div>Bash / db-dump</div>
     </div>
   </div>
 
@@ -268,7 +268,7 @@ let editId = null;
 let editType = null;
 let serverModalSources = [];
 let serverModalSourceEditId = null;
-const DEFAULT_VIRTUALIZATION_OPTIONS = ['HyperV', 'Docker', 'Proxmox', 'Kubernetes'];
+const DEFAULT_VIRTUALIZATION_OPTIONS = ['HyperV', 'Docker', 'Proxmox', 'Kubernetes', 'VMware'];
 
 function getVirtualizationOptions() {
   const names = (data.virtualizationTypes || []).map(v => v.name).filter(Boolean);
@@ -539,7 +539,7 @@ const typeColors = {
   server: { physical: '#1e4080', 'vm-proxmox': '#4a1a80', 'vm-hyperv': '#1a4a1a', container: '#2a3a4a', cloud: '#0a3a4a' },
   source: { database: '#1a3a6a', share: '#3a2a0a', config: '#1a2a3a', 'vm-full': '#3a1a6a', kubernetes: '#1a3a2a', system: '#3a2a2a' },
   target: { nas: '#1a3a4a', 'tape-lto9': '#4a2a0a', 'offsite-rsync': '#0a3a4a', 'backup-server': '#2a1a4a', local: '#2a2a2a', s3: '#0a2a3a' },
-  method: { 'veeam-agent': '#2a4a2a', 'veeam-br': '#3a4a1a', rsync: '#1a2a4a', 'bash-script': '#4a3a1a', pg_dump: '#4a3a1a', 'tape-job': '#8B4513' },
+  method: { 'local-backupagent': '#2a4a2a', 'central-backup-mgmt': '#3a4a1a', rsync: '#1a2a4a', 'bash-script': '#4a3a1a', 'db-dump': '#4a3a1a', 'tape-job': '#8B4513' },
 };
 
 function nodeColor(group, type) {
@@ -833,7 +833,7 @@ function renderSources() {
 }
 
 function renderMethods() {
-  const typeColor = { 'veeam-agent': 'active', 'veeam-br': 'active', rsync: 'config', 'bash-script': 'share', pg_dump: 'db', 'tape-job': 'tape' };
+  const typeColor = { 'local-backupagent': 'active', 'central-backup-mgmt': 'active', rsync: 'config', 'bash-script': 'share', 'db-dump': 'db', 'tape-job': 'tape' };
   document.getElementById('tbl-methods').innerHTML = data.methods.map(m => `
     <tr>
       <td><strong>${m.name}</strong></td>
@@ -1101,7 +1101,7 @@ function openModal(type, id = null) {
             </label>
             <label id="qc-db-label" style="display:flex;align-items:flex-start;gap:8px;line-height:1.5;opacity:0.4;cursor:not-allowed;">
               <input type="checkbox" id="qc-dbdump" disabled style="margin-top:3px;">
-              <span><strong>DB-Dump lokal anlegen</strong><br><span style="color:var(--text2);font-size:12px;">Quelle: DB-Dump komprimiert &nbsp;·&nbsp; Methode: pg_dump &nbsp;·&nbsp; Ziel: /backup-databases &nbsp;·&nbsp; Zeitplan: täglich &nbsp;·&nbsp; Aufbewahrung: 3 Tage &nbsp;<em style="color:var(--yellow)">(Funktion „DB" aktivieren)</em></span></span>
+              <span><strong>DB-Dump lokal anlegen</strong><br><span style="color:var(--text2);font-size:12px;">Quelle: DB-Dump komprimiert &nbsp;·&nbsp; Methode: db-dump &nbsp;·&nbsp; Ziel: /backup-databases &nbsp;·&nbsp; Zeitplan: täglich &nbsp;·&nbsp; Aufbewahrung: 3 Tage &nbsp;<em style="color:var(--yellow)">(Funktion „DB" aktivieren)</em></span></span>
             </label>
           </div>
         </div>
@@ -1313,7 +1313,7 @@ async function saveServer() {
     if (qcDb) {
       const ok = await createQuickJob(serverId, existingSources, existingJobs,
         'database', 'DB-Dump lokal', '/backup-databases', 'Lokaler Datenbankdump, komprimiert',
-        'pg_dump', 'DB-Dump täglich', 'Dump nach /backup-databases');
+        'db-dump', 'DB-Dump täglich', 'Dump nach /backup-databases');
       if (ok) created++;
     }
   }

@@ -50,6 +50,7 @@ DEFAULT_VIRTUALIZATION_TYPES = [
     {'id': 2, 'name': 'Docker'},
     {'id': 3, 'name': 'Proxmox'},
     {'id': 4, 'name': 'Kubernetes'},
+    {'id': 5, 'name': 'VMware'},
 ]
 
 # Initialize global files
@@ -60,11 +61,11 @@ for name, path in GLOBAL_FILES.items():
                 path.write_text(LEGACY_METHODS_FILE.read_text(encoding='utf-8'), encoding='utf-8')
                 continue
             path.write_text(json.dumps([
-                {'id': 1, 'name': 'Veeam Agent', 'type': 'veeam-agent', 'description': 'Veeam Agent für Linux/Windows'},
-                {'id': 2, 'name': 'Veeam Backup & Replication', 'type': 'veeam-br', 'description': 'Veeam Backup & Replication'},
+                {'id': 1, 'name': 'local backupagent', 'type': 'local-backupagent', 'description': 'Lokaler Backup-Agent auf dem System'},
+                {'id': 2, 'name': 'central backup mgmt', 'type': 'central-backup-mgmt', 'description': 'Zentrale Verwaltung und Steuerung von Backups'},
                 {'id': 3, 'name': 'rsync', 'type': 'rsync', 'description': 'rsync Backup'},
                 {'id': 4, 'name': 'Bash Script', 'type': 'bash-script', 'description': 'Benutzerdefiniertes Bash-Skript'},
-                {'id': 5, 'name': 'pg_dump', 'type': 'pg_dump', 'description': 'PostgreSQL Dump'},
+                {'id': 5, 'name': 'db-dump', 'type': 'db-dump', 'description': 'Lokaler Datenbank-Dump'},
                 {'id': 6, 'name': 'Tape Job', 'type': 'tape-job', 'description': 'Tape Sicherung'},
             ], indent=2, ensure_ascii=False), encoding='utf-8')
         elif name == 'settings':

@@ -1,15 +1,15 @@
 [
   {
     "id": 1,
-    "name": "Veeam Agent",
-    "type": "veeam-agent",
-    "description": "Veeam Agent fuer Linux/Windows"
+    "name": "local backupagent",
+    "type": "local-backupagent",
+    "description": "Lokaler Backup-Agent auf dem System"
   },
   {
     "id": 2,
-    "name": "Veeam Backup & Replication",
-    "type": "veeam-br",
-    "description": "Veeam Backup & Replication"
+    "name": "central backup mgmt",
+    "type": "central-backup-mgmt",
+    "description": "Zentrale Verwaltung und Steuerung von Backups"
   },
   {
     "id": 3,
@@ -25,9 +25,9 @@
   },
   {
     "id": 5,
-    "name": "pg_dump",
-    "type": "pg_dump",
-    "description": "PostgreSQL Dump"
+    "name": "db-dump",
+    "type": "db-dump",
+    "description": "Lokaler Datenbank-Dump"
   },
   {
     "id": 6,
