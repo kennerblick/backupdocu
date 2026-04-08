@@ -8,9 +8,9 @@ Verwaltet Server, Backup-Quellen, Methoden, Targets und Jobs mit server-spezifis
 - **Server-Inventar** – physical, Proxmox-VM, Hyper-V-VM, Container, Cloud
 - **Standort-Management** – Standort pro Server (`extern`, `gruenes Netz`, `gelbes Netz`, `virtuell`), filterbar und gruppiert in der Server-Ansicht
 - **Server-Funktionen** – u. a. `Webserver`, `SFTP-Server`, `Share`, `DNS`, `DHCP`, `Router`
-- **Virtualisierung als eigenes Feld** – auswählbar: `HyperV`, `Docker`, `Proxmox`, `Kubernetes`
+- **Virtualisierung als eigenes Feld** – auswählbar: `HyperV`, `Docker`, `Proxmox`, `Kubernetes`, `VMware`
 - **Backup-Quellen** – Datenbanken, Shares, Configs, VMs, Kubernetes; direkt im Server-Editor pflegbar
-- **Backup-Methoden** – Veeam Agent, Veeam B&R, rsync, Bash-Script, pg_dump, Tape Job
+- **Backup-Methoden** – local backupagent, central backup mgmt, rsync, Bash-Script, db-dump, Tape Job
 - **Targets** – eigene Hauptmenü-Ansicht für Backup-Ziele (NAS, Tape, Offsite, Backup-Server, S3)
 - **Backup-Flow** – serverbezogene Ansicht für Quellen und Jobs
 - **Backup-Jobs** – 3-stufig: Primär → Tape → Offsite
@@ -19,7 +19,6 @@ Verwaltet Server, Backup-Quellen, Methoden, Targets und Jobs mit server-spezifis
 - **Tree-View** – nur Server mit Quellen, direkt editierbare Einträge
 - **Tape & Offsite** – visuell hervorgehoben (orange / cyan)
 - **Speicheroptionen** – dateibasiert (JSON, per-server Verzeichnisse + versioniertes `config-data`)
-- **Export/Import** – komplette Konfiguration als JSON
 
 ## Stack
 
@@ -146,7 +145,7 @@ Für größere Umgebungen (z. B. 60+ Server) bietet die Server-Verwaltung zusät
 - `GET /api/targets`, `POST /api/targets`, `PUT /api/targets/{id}`, `DELETE /api/targets/{id}`
 - `GET /api/backup-types`
 - `GET /api/virtualization-types`
-- `GET /api/server-functions`
+- `GET /api/server-functions`, `POST /api/server-functions`, `PUT /api/server-functions/{id}`, `DELETE /api/server-functions/{id}`
 - `GET /api/server-locations`, `POST /api/server-locations`, `PUT /api/server-locations/{id}`, `DELETE /api/server-locations/{id}`
 - `GET /api/stats`, `GET /api/health`
 
@@ -179,7 +178,7 @@ Für den Einsatz hinter einem bestehenden nginx Reverse-Proxy empfiehlt sich:
 
 ```nginx
 location /backupdocu/ {
-    proxy_pass http://localhost:8080/;
+  proxy_pass http://localhost:9090/;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
 }
