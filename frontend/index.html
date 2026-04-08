@@ -583,6 +583,16 @@ async function renderTopology() {
     return null;
   }
 
+  function getQuickJobDisplay(job) {
+    if (job?.name === 'Systembackup täglich') {
+      return 'Systembackup local';
+    }
+    if (job?.name === 'DB-Dump täglich') {
+      return 'DB-Backup local';
+    }
+    return null;
+  }
+
   data.servers.forEach(s => {
     addNode({
       id: `srv-${s.id}`, label: s.name,
@@ -617,8 +627,16 @@ async function renderTopology() {
 
   topologyData.forEach(({ server, sources, jobs }) => {
     const sourceMap = new Map(sources.map(source => [source.id, source]));
+    const quickJobSourceIds = new Set(
+      jobs
+        .filter(job => getQuickJobDisplay(job) && job.source_id)
+        .map(job => job.source_id)
+    );
 
     sources.forEach(source => {
+      if (quickJobSourceIds.has(source.id)) {
+        return;
+      }
       addNode({
         id: `src-${server.id}-${source.id}`,
         label: source.name,
@@ -633,6 +651,30 @@ async function renderTopology() {
     });
 
     jobs.forEach(job => {
+      const quickLabel = getQuickJobDisplay(job);
+      if (quickLabel) {
+        const quickNodeId = `quick-${server.id}-${job.id}`;
+        const primaryTarget = targetById(job.primary_target_id);
+        addNode({
+          id: quickNodeId,
+          label: quickLabel,
+          title: `Server: ${server.name}\nJob: ${job.name}\nZiel: ${primaryTarget?.name || '-'}\n${job.notes || ''}`,
+          group: 'source',
+          level: 1,
+          color: { background: nodeColor('source', job.name === 'DB-Dump täglich' ? 'database' : 'system'), border: '#4a6a9a' },
+          font: { color: '#e2e5f0', size: 11 },
+          shape: 'ellipse',
+        });
+        edges.push({
+          from: `srv-${server.id}`,
+          to: quickNodeId,
+          color: { color: '#3a4a6a' },
+          arrows: 'to',
+          width: 1,
+        });
+        return;
+      }
+
       const jobNodeId = `job-${server.id}-${job.id}`;
       const method = data.methods.find(m => m.id === job.method_id);
       const methodNodeId = method ? `mth-${server.id}-${job.id}-${method.id}` : null;
@@ -1271,9 +1313,14 @@ async function createQuickJob(serverId, existingSources, existingJobs, srcType, 
   }
   if (existingJobs.find(j => j.name === jobName)) return true;
   const mth = data.methods.find(m => m.type === methodType);
+  const primaryTargetName = jobName === 'Systembackup täglich' ? 'backup local' : jobName === 'DB-Dump täglich' ? 'backup databases' : null;
+  const primaryTarget = primaryTargetName
+    ? data.targets.find(t => (t.name || '').trim().toLowerCase() === primaryTargetName)
+    : null;
   const jr = await fetch(`${API}/servers/${serverId}/jobs`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: jobName, source_id: source.id, method_id: mth?.id || null,
+      primary_target_id: primaryTarget?.id || null,
       status: 'active', schedule: 'daily', retention: '3 Tage', is_compressed: true,
       is_encrypted: false, notes: jobNotes })
   });
