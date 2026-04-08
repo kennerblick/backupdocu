@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
@@ -49,7 +49,7 @@ jobs:
             assert 'servers' in stats
             print('✓ Stats endpoint passed')
 
-            for endpoint in ['servers', 'sources', 'methods', 'targets', 'jobs']:
+            for endpoint in ['servers', 'methods', 'targets', 'server-functions', 'server-locations']:
                 resp = requests.get(f'http://localhost:8000/api/{endpoint}')
                 assert resp.status_code == 200
                 assert isinstance(resp.json(), list)
