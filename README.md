@@ -6,7 +6,7 @@ Verwaltet Server, Backup-Quellen, Methoden, Targets und Jobs mit server-spezifis
 ## Features
 
 - **Server-Inventar** – physical, Proxmox-VM, Hyper-V-VM, Container, Cloud
-- **Standort-Management** – Standort pro Server (`extern`, `gruenes Netz`, `gelbes Netz`, `virtuell`), filterbar und gruppiert in der Server-Ansicht
+- **Standort-Management** – Standort pro Server  filterbar und gruppiert in der Server-Ansicht
 - **Server-Funktionen** – u. a. `Webserver`, `SFTP-Server`, `Share`, `DNS`, `DHCP`, `Router`
 - **Virtualisierung als eigenes Feld** – auswählbar: `HyperV`, `Docker`, `Proxmox`, `Kubernetes`, `VMware`
 - **Backup-Quellen** – Datenbanken, Shares, Configs, VMs, Kubernetes; direkt im Server-Editor pflegbar
