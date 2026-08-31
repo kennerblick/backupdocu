@@ -44,6 +44,7 @@ DEFAULT_SERVER_FUNCTIONS = [
     {'id': 4, 'name': 'DNS', 'description': 'Namensauflösung im Netzwerk'},
     {'id': 5, 'name': 'DHCP', 'description': 'Automatische IP-Adressvergabe'},
     {'id': 6, 'name': 'Router', 'description': 'Routing zwischen Netzwerken'},
+    {'id': 7, 'name': 'Datenbankserver', 'description': 'Betrieb von Datenbankinstanzen'},
 ]
 
 DEFAULT_VIRTUALIZATION_TYPES = [

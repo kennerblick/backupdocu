@@ -459,21 +459,20 @@ async function renderTree() {
     // Build tree HTML
     let html = '';
     for (const { server, sources } of allServerData) {
-      const serverIcon = server.type === 'physical' ? 'SRV' : server.type === 'vm-proxmox' ? 'VM' : server.type === 'vm-hyperv' ? 'HV' : 'CLD';
       html += `
         <div class="tree-node server" onclick="editFromTree('server', null, ${server.id})" style="cursor: pointer;">
           <span class="tree-toggle" onclick="toggleTreeNode(this); event.stopPropagation()">+</span>
-          <span class="tree-content">${serverIcon} ${server.name}</span>
+          <span class="tree-content">${server.name}</span>
           <span class="tree-stats">${sources.length} Quellen</span>
           <div class="tree-children" style="display: none;">
       `;
 
       // Sources directly (no intermediate "Backup-Quellen" node)
       for (const source of sources) {
-        const typeIcon = source.type === 'database' ? 'DB' : source.type === 'share' ? 'SHR' : source.type === 'config' ? 'CFG' : 'SRC';
+        const label = source.type === 'share' ? (source.path || source.name) : source.name;
         html += `
           <div class="tree-node source" onclick="editFromTree('source', ${server.id}, ${source.id}); event.stopPropagation()" style="cursor: pointer; margin-left: 20px;">
-            <span class="tree-content">${typeIcon} ${source.name}</span>
+            <span class="tree-content">${label}</span>
           </div>
         `;
       }
@@ -1166,7 +1165,7 @@ function openModal(type, id = null) {
             </label>
             <label id="qc-db-label" style="display:flex;align-items:flex-start;gap:8px;line-height:1.5;opacity:0.4;cursor:not-allowed;">
               <input type="checkbox" id="qc-dbdump" disabled style="margin-top:3px;">
-              <span><strong>DB-Dump lokal anlegen</strong><br><span style="color:var(--text2);font-size:12px;">Quelle: DB-Dump komprimiert &nbsp;·&nbsp; Methode: db-dump &nbsp;·&nbsp; Ziel: /backup-databases &nbsp;·&nbsp; Zeitplan: täglich &nbsp;·&nbsp; Aufbewahrung: 3 Tage &nbsp;<em style="color:var(--yellow)">(Funktion „DB" aktivieren)</em></span></span>
+              <span><strong>DB-Dump lokal anlegen</strong><br><span style="color:var(--text2);font-size:12px;">Quelle: DB-Dump komprimiert &nbsp;·&nbsp; Methode: db-dump &nbsp;·&nbsp; Ziel: /backup-databases &nbsp;·&nbsp; Zeitplan: täglich &nbsp;·&nbsp; Aufbewahrung: 3 Tage &nbsp;<em style="color:var(--yellow)">(Funktion „DB"/„Datenbankserver" aktivieren)</em></span></span>
             </label>
           </div>
         </div>
@@ -1314,7 +1313,7 @@ function updateQuickConfig() {
   if (!section) return;
   section.style.display = isLinux ? 'block' : 'none';
 
-  const dbFnChecked = Array.from(document.querySelectorAll('[id^="fn-"]:checked')).some(cb => cb.value === 'DB');
+  const dbFnChecked = Array.from(document.querySelectorAll('[id^="fn-"]:checked')).some(cb => /^(db|datenbankserver)$/i.test(cb.value.trim()));
   const dbDump = g('qc-dbdump');
   const dbLabel = g('qc-db-label');
   if (dbDump) {
