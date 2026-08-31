@@ -812,6 +812,13 @@ async function renderTopology() {
       network = null;
     }
     network = new vis.Network(container, { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) }, options);
+    network.on('click', params => {
+      if (params.nodes.length === 0) return;
+      const nodeId = params.nodes[0];
+      if (nodeId.startsWith('srv-')) {
+        openModal('server', Number(nodeId.slice(4)));
+      }
+    });
   } catch (err) {
     container.innerHTML = '<div style="padding:24px;color:var(--red);">Topologie konnte nicht gerendert werden.</div>';
     console.error('Topology render error:', err);
