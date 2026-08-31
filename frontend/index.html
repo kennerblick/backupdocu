@@ -81,6 +81,8 @@ tr:hover td { background: var(--bg3); }
 .badge-paused { background: #3a3a1a; color: var(--yellow); }
 .badge-disabled { background: #3a1a1a; color: var(--red); }
 
+.source-pick:has(input:checked) { background: var(--accent); border-color: var(--accent); color: #fff; }
+
 /* Modal */
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 1000; align-items: center; justify-content: center; }
 .modal-overlay.open { display: flex; }
@@ -1256,9 +1258,12 @@ function openModal(type, id = null) {
               <input type="radio" name="f-source-mode" value="target" ${fromTarget?'checked':''} onchange="toggleJobSourceMode()"> Bestehendes Backup-Ziel (Verkettung)
             </label>
           </div>
-          <select id="f-source" style="${fromTarget?'display:none;':''}">
-            ${currentServerData.sources.map(s => `<option value="${s.id}" ${obj?.source_id===s.id?'selected':''}>${s.name}</option>`).join('')}
-          </select>
+          <div id="f-source" style="display:flex;flex-wrap:wrap;gap:8px;${fromTarget?'display:none;':''}">
+            ${currentServerData.sources.map(s => `
+              <label class="source-pick" style="display:flex;align-items:center;gap:6px;cursor:pointer;background:var(--bg3);padding:6px 12px;border-radius:20px;border:1px solid var(--border);font-weight:normal;">
+                <input type="radio" name="f-source-pick" value="${s.id}" ${obj?.source_id===s.id?'checked':''}> ${s.name}
+              </label>`).join('') || '<div class="text-muted" style="font-size:12px;">Keine Quellen auf diesem Server vorhanden.</div>'}
+          </div>
           <select id="f-source-target" style="${fromTarget?'':'display:none;'}">
             ${data.targets.map(t => `<option value="${t.id}" ${obj?.source_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
           </select>
@@ -1434,7 +1439,7 @@ async function saveJob() {
   const fromTarget = document.querySelector('input[name="f-source-mode"]:checked')?.value === 'target';
   const body = {
     name: g('f-name').value,
-    source_id: fromTarget ? null : parseInt(g('f-source').value),
+    source_id: fromTarget ? null : intOrNull(document.querySelector('input[name="f-source-pick"]:checked')?.value),
     source_target_id: fromTarget ? intOrNull(g('f-source-target').value) : null,
     method_id: intOrNull(g('f-method').value), target_id: intOrNull(g('f-target').value),
     schedule: g('f-sched').value || null, retention: g('f-ret').value || null,
