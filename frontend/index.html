@@ -1551,12 +1551,17 @@ async function saveJob() {
   }
   if (editId) jobBodies = jobBodies.slice(0, 1); // editing an existing job always updates exactly one record
 
-  const results = await Promise.all(jobBodies.map(body => {
+  // Sequential on purpose: the backend keeps each server's jobs in one JSON
+  // file with a read-modify-write update, so concurrent requests racing on
+  // the same file would silently drop jobs instead of accumulating them.
+  let allOk = true;
+  for (const body of jobBodies) {
     const url = editId ? `${API}/servers/${selectedServerId}/jobs/${editId}` : `${API}/servers/${selectedServerId}/jobs`;
     const method = editId ? 'PUT' : 'POST';
-    return fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  }));
-  if (results.some(r => !r.ok)) { toast('Fehler beim Speichern', true); return; }
+    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) allOk = false;
+  }
+  if (!allOk) { toast('Fehler beim Speichern', true); return; }
 
   toast(jobBodies.length > 1 ? `${jobBodies.length} Jobs angelegt ✓` : 'Gespeichert ✓');
   closeModal();
