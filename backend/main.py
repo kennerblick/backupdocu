@@ -65,6 +65,16 @@ DEFAULT_OS_TYPES = [
     {'id': 7, 'name': 'anderes'},
 ]
 
+DEFAULT_BACKUP_TYPES = [
+    {'id': 1, 'name': 'NAS', 'type': 'nas'},
+    {'id': 2, 'name': 'Backup-Server', 'type': 'backup-server'},
+    {'id': 3, 'name': 'Tape (LTO-9)', 'type': 'tape-lto9'},
+    {'id': 4, 'name': 'Offsite rsync', 'type': 'offsite-rsync'},
+    {'id': 5, 'name': 'Local', 'type': 'local'},
+    {'id': 6, 'name': 'S3', 'type': 's3'},
+    {'id': 7, 'name': 'Bankschließfach (Offline)', 'type': 'offline-vault'},
+]
+
 # Initialize global files
 for name, path in GLOBAL_FILES.items():
     if not path.exists():
@@ -90,14 +100,10 @@ for name, path in GLOBAL_FILES.items():
             path.write_text('[]', encoding='utf-8')
 
 if not BACKUP_TYPES_FILE.exists():
-    BACKUP_TYPES_FILE.write_text(json.dumps([
-        {'id': 1, 'name': 'NAS', 'type': 'nas'},
-        {'id': 2, 'name': 'Backup-Server', 'type': 'backup-server'},
-        {'id': 3, 'name': 'Tape (LTO-9)', 'type': 'tape-lto9'},
-        {'id': 4, 'name': 'Offsite rsync', 'type': 'offsite-rsync'},
-        {'id': 5, 'name': 'Local', 'type': 'local'},
-        {'id': 6, 'name': 'S3', 'type': 's3'},
-    ], indent=2, ensure_ascii=False), encoding='utf-8')
+    BACKUP_TYPES_FILE.write_text(
+        json.dumps(DEFAULT_BACKUP_TYPES, indent=2, ensure_ascii=False),
+        encoding='utf-8'
+    )
 
 if not VIRTUALIZATION_TYPES_FILE.exists():
     VIRTUALIZATION_TYPES_FILE.write_text(
@@ -280,6 +286,65 @@ def delete_server_with_data(server_id: int) -> None:
     DataStore.delete_server_directory(server_id)
 
 
+LEGACY_JOB_TARGET_FIELDS = ('primary_target_id', 'tape_target_id', 'offsite_target_id')
+
+
+def _split_legacy_job(job: Dict[str, Any], next_hop_id: int) -> tuple[List[Dict[str, Any]], int]:
+    """Expand one legacy 3-tier job (primary/tape/offsite) into a chain of
+    single-hop jobs. Returns the resulting jobs and the next free id."""
+    primary = job.pop('primary_target_id', None)
+    tape = job.pop('tape_target_id', None)
+    offsite = job.pop('offsite_target_id', None)
+    job['source_target_id'] = None
+    job['target_id'] = primary
+
+    hops = [job]
+    upstream_target = primary
+    for suffix, target_id in (('Tape', tape), ('Offsite', offsite)):
+        if not (target_id and upstream_target):
+            continue
+        hops.append({
+            'id': next_hop_id,
+            'name': f"{job['name']} ({suffix})",
+            'source_id': None,
+            'source_target_id': upstream_target,
+            'method_id': None,
+            'target_id': target_id,
+            'schedule': job.get('schedule'),
+            'retention': job.get('retention'),
+            'gfs_policy': job.get('gfs_policy') if suffix == 'Tape' else None,
+            'is_encrypted': job.get('is_encrypted', False),
+            'is_compressed': job.get('is_compressed', True),
+            'status': job.get('status', 'active'),
+            'notes': None,
+            'created_at': job.get('created_at'),
+            'updated_at': job.get('updated_at'),
+        })
+        next_hop_id += 1
+        upstream_target = target_id
+    return hops, next_hop_id
+
+
+def migrate_server_jobs(server_id: int) -> None:
+    """Upgrade a server's stored jobs from the old fixed-tier shape
+    (primary/tape/offsite target on one job) to the current one-hop-per-job
+    model. No-op once every job has already been migrated."""
+    jobs = DataStore.load_server_data(server_id, 'jobs')
+    if not any(field in job for job in jobs for field in LEGACY_JOB_TARGET_FIELDS):
+        return
+
+    migrated: List[Dict[str, Any]] = []
+    next_hop_id = next_id(jobs)
+    for job in jobs:
+        if not any(field in job for field in LEGACY_JOB_TARGET_FIELDS):
+            migrated.append(job)
+            continue
+        hops, next_hop_id = _split_legacy_job(dict(job), next_hop_id)
+        migrated.extend(hops)
+
+    DataStore.save_server_data(server_id, 'jobs', migrated)
+
+
 def with_default_server_functions(settings: Dict[str, Any]) -> tuple[List[Dict[str, Any]], bool]:
     """Return server functions with required defaults merged in."""
     funcs = settings.get('server_functions', [])
@@ -302,6 +367,29 @@ def with_default_server_functions(settings: Dict[str, Any]) -> tuple[List[Dict[s
         changed = True
 
     return funcs, changed
+
+
+def with_default_backup_types(types: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], bool]:
+    """Return backup target types with required defaults merged in."""
+    if not isinstance(types, list):
+        types = []
+
+    existing_types = {str(t.get('type', '')).strip().lower() for t in types}
+    next_type_id = max((t.get('id', 0) for t in types if isinstance(t, dict)), default=0) + 1
+    changed = False
+
+    for default_type in DEFAULT_BACKUP_TYPES:
+        key = default_type['type'].strip().lower()
+        if key in existing_types:
+            continue
+        entry = dict(default_type)
+        entry['id'] = next_type_id
+        next_type_id += 1
+        types.append(entry)
+        existing_types.add(key)
+        changed = True
+
+    return types, changed
 
 
 def load_virtualization_types() -> List[Dict[str, Any]]:
@@ -419,12 +507,15 @@ class BackupTargetBase(BaseModel):
 
 
 class BackupJobBase(BaseModel):
+    """One backup hop: reads from a source (or an upstream target) and
+    writes to a target. Multi-stage flows (e.g. local -> repository ->
+    tape -> offsite vault) are modeled as a chain of jobs, each one hop,
+    rather than as fixed tiers on a single job."""
     name: str
-    source_id: int
+    source_id: Optional[int] = None
+    source_target_id: Optional[int] = None
     method_id: Optional[int] = None
-    primary_target_id: Optional[int] = None
-    tape_target_id: Optional[int] = None
-    offsite_target_id: Optional[int] = None
+    target_id: Optional[int] = None
     schedule: Optional[str] = None
     retention: Optional[str] = None
     gfs_policy: Optional[str] = None
@@ -446,6 +537,11 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
+# One-time upgrade of any pre-existing per-server job files to the current
+# one-hop-per-job schema (see migrate_server_jobs).
+for _server in DataStore.load_global('servers'):
+    migrate_server_jobs(_server.get('id'))
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ENDPOINTS: HEALTH & STATS
@@ -460,24 +556,29 @@ def health():
 def get_stats():
     servers = DataStore.load_global('servers')
     targets = DataStore.load_global('targets')
-    
+    target_type_by_id = {t.get('id'): t.get('type') for t in targets}
+
     total_sources = 0
     total_jobs = 0
     jobs_active = 0
     jobs_with_tape = 0
     jobs_with_offsite = 0
-    
+
     for server in servers:
         server_id = server.get('id')
         sources = DataStore.load_server_data(server_id, 'sources')
         jobs = DataStore.load_server_data(server_id, 'jobs')
-        
+
         total_sources += len(sources)
         total_jobs += len(jobs)
         jobs_active += len([j for j in jobs if j.get('status') == 'active'])
-        jobs_with_tape += len([j for j in jobs if j.get('tape_target_id')])
-        jobs_with_offsite += len([j for j in jobs if j.get('offsite_target_id')])
-    
+        for job in jobs:
+            target_type = target_type_by_id.get(job.get('target_id'))
+            if target_type == 'tape-lto9':
+                jobs_with_tape += 1
+            elif target_type in ('offsite-rsync', 's3', 'offline-vault'):
+                jobs_with_offsite += 1
+
     return {
         'servers': len(servers),
         'sources': total_sources,
@@ -530,9 +631,13 @@ def list_methods():
 @app.get('/api/backup-types')
 def list_backup_types():
     try:
-        return json.loads(BACKUP_TYPES_FILE.read_text(encoding='utf-8'))
+        types = json.loads(BACKUP_TYPES_FILE.read_text(encoding='utf-8'))
     except (json.JSONDecodeError, FileNotFoundError):
-        return []
+        types = []
+    types, changed = with_default_backup_types(types)
+    if changed:
+        BACKUP_TYPES_FILE.write_text(json.dumps(types, indent=2, ensure_ascii=False), encoding='utf-8')
+    return types
 
 
 @app.get('/api/virtualization-types')

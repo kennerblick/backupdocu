@@ -11,11 +11,11 @@ Verwaltet Server, Backup-Quellen, Methoden, Targets und Jobs mit server-spezifis
 - **Virtualisierung als eigenes Feld** – auswählbar: `HyperV`, `Docker`, `Proxmox`, `Kubernetes`, `VMware`
 - **Backup-Quellen** – Datenbanken, Shares, Configs, VMs, Kubernetes; direkt im Server-Editor pflegbar
 - **Backup-Methoden** – local backupagent, central backup mgmt, rsync, Bash-Script, db-dump, Tape Job
-- **Targets** – eigene Hauptmenü-Ansicht für Backup-Ziele (NAS, Tape, Offsite, Backup-Server, S3)
+- **Targets** – eigene Hauptmenü-Ansicht für Backup-Ziele (NAS, Tape, Offsite, Backup-Server, S3, Bankschließfach/Offline)
 - **Backup-Flow** – serverbezogene Ansicht für Quellen und Jobs
-- **Backup-Jobs** – 3-stufig: Primär → Tape → Offsite
+- **Backup-Jobs** – jeder Job bildet einen Hop ab (Quelle → Ziel); mehrstufige Flüsse (z. B. lokal → Repository → Tape → Offsite-Archiv) entstehen durch Verkettung, indem ein Job als Quelle das Ziel eines vorherigen Jobs referenziert
 - **1-Click Job-Erstellung** – Linux-Schnellkonfiguration für Systembackup und DB-Dump (Standard: täglich, Aufbewahrung 3 Tage)
-- **Topologie-Ansicht** – interaktive Visualisierung Server → Quelle → Job → Methode → Target
+- **Topologie-Ansicht** – interaktive Visualisierung Server → Quelle → Job → Methode → Host → Ziel, mit automatischer Spaltenausrichtung für beliebig lange Backup-Ketten
 - **Tree-View** – nur Server mit Quellen, direkt editierbare Einträge
 - **Tape & Offsite** – visuell hervorgehoben (orange / cyan)
 - **Speicheroptionen** – dateibasiert (JSON, per-server Verzeichnisse + versioniertes `config-data`)

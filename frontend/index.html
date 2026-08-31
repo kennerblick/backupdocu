@@ -81,12 +81,6 @@ tr:hover td { background: var(--bg3); }
 .badge-paused { background: #3a3a1a; color: var(--yellow); }
 .badge-disabled { background: #3a1a1a; color: var(--red); }
 
-.tier-icons { display: flex; gap: 4px; }
-.tier-icon { width: 20px; height: 20px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; }
-.tier-primary { background: #1e3a5f; }
-.tier-tape { background: #3a200a; }
-.tier-offsite { background: #0a2a3a; }
-
 /* Modal */
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 1000; align-items: center; justify-content: center; }
 .modal-overlay.open { display: flex; }
@@ -243,7 +237,7 @@ textarea { resize: vertical; min-height: 60px; }
         </div>
       </div>
       <table>
-        <thead><tr><th>Name</th><th>Quelle</th><th>Methode</th><th>Primär-Ziel</th><th>Tiers</th><th>Zeitplan</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Quelle</th><th>Methode</th><th>Ziel</th><th>Typ</th><th>Zeitplan</th><th>Status</th><th></th></tr></thead>
         <tbody id="tbl-jobs"></tbody>
       </table>
     </div>
@@ -553,13 +547,51 @@ function badge(text, cls) {
 const typeColors = {
   server: { physical: '#1e4080', 'vm-proxmox': '#4a1a80', 'vm-hyperv': '#1a4a1a', container: '#2a3a4a', cloud: '#0a3a4a' },
   source: { database: '#1a3a6a', share: '#3a2a0a', config: '#1a2a3a', 'vm-full': '#3a1a6a', kubernetes: '#1a3a2a', system: '#3a2a2a' },
-  target: { nas: '#1a3a4a', 'tape-lto9': '#4a2a0a', 'offsite-rsync': '#0a3a4a', 'backup-server': '#2a1a4a', local: '#2a2a2a', s3: '#0a2a3a' },
+  target: { nas: '#1a3a4a', 'tape-lto9': '#4a2a0a', 'offsite-rsync': '#0a3a4a', 'backup-server': '#2a1a4a', local: '#2a2a2a', s3: '#0a2a3a', 'offline-vault': '#3a1a2a' },
   method: { 'local-backupagent': '#2a4a2a', 'central-backup-mgmt': '#3a4a1a', rsync: '#1a2a4a', 'bash-script': '#4a3a1a', 'db-dump': '#4a3a1a', 'tape-job': '#8B4513' },
 };
 
 function nodeColor(group, type) {
   const map = typeColors[group] || {};
   return map[type] || '#2a3a4a';
+}
+
+// Topology columns, left to right: Server -> Quelle -> Job -> Methode -> Host -> Ziel.
+// A target that is itself consumed as the source of a later job (chained
+// backups, e.g. lokal -> Repository -> Tape -> Offsite-Archiv) is pushed
+// further right by exactly one "hop" (Host + Ziel) per link in the chain,
+// so multi-stage flows still line up as clean columns instead of collapsing
+// onto the first target's column.
+const TOPOLOGY_LEVELS = { server: 0, source: 1, job: 2, method: 3, host: 4, target: 5 };
+
+function hostNodeId(hostname) {
+  return `host-${String(hostname).toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'unknown'}`;
+}
+
+function targetEntryNodeId(target) {
+  return target?.hostname ? hostNodeId(target.hostname) : `tgt-${target.id}`;
+}
+
+function computeTargetLevels(jobs) {
+  const levels = new Map();
+  jobs.forEach(job => {
+    if (job.source_id && job.target_id) levels.set(job.target_id, TOPOLOGY_LEVELS.target);
+  });
+  // Chained hops depend on an upstream target's level, which may itself be
+  // resolved in a later job record - iterate until nothing changes.
+  for (let pass = 0; pass < jobs.length + 1; pass++) {
+    let changed = false;
+    jobs.forEach(job => {
+      if (!job.source_target_id || !job.target_id || levels.has(job.target_id)) return;
+      const upstreamLevel = levels.get(job.source_target_id);
+      if (upstreamLevel === undefined) return;
+      const target = targetById(job.target_id);
+      levels.set(job.target_id, upstreamLevel + (target?.hostname ? 2 : 1));
+      changed = true;
+    });
+    if (!changed) break;
+  }
+  return levels;
 }
 
 async function renderTopology() {
@@ -587,49 +619,30 @@ async function renderTopology() {
     nodes.push(node);
   }
 
-  function inferLocalTargetPath(job, source) {
-    const text = `${job?.name || ''} ${job?.notes || ''} ${source?.name || ''} ${source?.path || ''}`.toLowerCase();
-    if (text.includes('/backup-databases') || text.includes('/backup-database') || text.includes('db-dump') || source?.type === 'database') {
-      return '/backup-databases';
-    }
-    if (text.includes('/backup') || text.includes('systembackup') || source?.type === 'system') {
-      return '/backup';
-    }
-    return null;
-  }
-
-  function getQuickJobDisplay(job) {
-    if (job?.name === 'Systembackup täglich') {
-      return 'Systembackup local';
-    }
-    if (job?.name === 'DB-Dump täglich') {
-      return 'DB-Backup local';
-    }
-    return null;
-  }
+  const targetLevels = computeTargetLevels(topologyData.flatMap(({ jobs }) => jobs));
+  const targetLevel = t => targetLevels.get(t.id) ?? TOPOLOGY_LEVELS.target;
 
   data.servers.forEach(s => {
     addNode({
       id: `srv-${s.id}`, label: s.name,
       title: `${s.hostname||''}\n${s.os||''}\n${s.role||''}`,
       group: 'server',
-      level: 0,
+      level: TOPOLOGY_LEVELS.server,
       color: { background: nodeColor('server', s.type), border: '#4a6fa0' },
       font: { color: '#e2e5f0', size: 12 },
       shape: 'box', margin: 8,
     });
   });
 
-  // Method nodes are created per job to keep each flow aligned in one row.
-
   data.targets.forEach(t => {
     const isTape = t.type === 'tape-lto9';
-    const isOffsite = t.type === 'offsite-rsync';
+    const isOffsite = t.type === 'offsite-rsync' || t.type === 'offline-vault' || t.type === 's3';
+    const level = targetLevel(t);
     addNode({
       id: `tgt-${t.id}`, label: t.name,
       title: `${t.hostname||''}\n${t.path||''}\nKapazität: ${t.capacity_tb||'?'} TB`,
       group: 'target',
-      level: 4,
+      level,
       color: {
         background: nodeColor('target', t.type),
         border: isTape ? '#f97316' : isOffsite ? '#06b6d4' : '#5a6a8a'
@@ -638,26 +651,30 @@ async function renderTopology() {
       font: { color: '#e2e5f0', size: 12, bold: isTape || isOffsite },
       shape: 'database',
     });
+
+    if (t.hostname) {
+      addNode({
+        id: hostNodeId(t.hostname),
+        label: t.hostname,
+        title: `Host für: ${t.name}`,
+        group: 'host',
+        level: level - 1,
+        color: { background: '#22314a', border: '#4a5b7a' },
+        font: { color: '#c3cadb', size: 11 },
+        shape: 'box', margin: 6,
+      });
+      edges.push({ from: hostNodeId(t.hostname), to: `tgt-${t.id}`, color: { color: '#3a4a6a' }, arrows: 'to', width: 1, dashes: [2, 3] });
+    }
   });
 
   topologyData.forEach(({ server, sources, jobs }) => {
-    const sourceMap = new Map(sources.map(source => [source.id, source]));
-    const quickJobSourceIds = new Set(
-      jobs
-        .filter(job => getQuickJobDisplay(job) && job.source_id)
-        .map(job => job.source_id)
-    );
-
     sources.forEach(source => {
-      if (quickJobSourceIds.has(source.id)) {
-        return;
-      }
       addNode({
         id: `src-${server.id}-${source.id}`,
         label: source.name,
         title: `Server: ${server.name}\nTyp: ${source.type}\nPfad: ${source.path || '-'}\n${source.description || ''}`,
         group: 'source',
-        level: 1,
+        level: TOPOLOGY_LEVELS.source,
         color: { background: nodeColor('source', source.type), border: '#4a6a9a' },
         font: { color: '#e2e5f0', size: 11 },
         shape: 'ellipse',
@@ -666,29 +683,34 @@ async function renderTopology() {
     });
 
     jobs.forEach(job => {
-      const quickLabel = getQuickJobDisplay(job);
-      if (quickLabel) {
-        const quickNodeId = `quick-${server.id}-${job.id}`;
-        const primaryTarget = targetById(job.primary_target_id);
-        addNode({
-          id: quickNodeId,
-          label: quickLabel,
-          title: `Server: ${server.name}\nJob: ${job.name}\nZiel: ${primaryTarget?.name || '-'}\n${job.notes || ''}`,
-          group: 'source',
-          level: 1,
-          color: { background: nodeColor('source', job.name === 'DB-Dump täglich' ? 'database' : 'system'), border: '#4a6a9a' },
-          font: { color: '#e2e5f0', size: 11 },
-          shape: 'ellipse',
-        });
+      if (!job.target_id) return;
+      const target = targetById(job.target_id);
+      if (!target) return;
+      const entryNodeId = targetEntryNodeId(target);
+
+      // Chained hop: this job's input is an earlier target, not a server
+      // source. Rendered as a single labeled edge (like the old tape/offsite
+      // tiers), since the job/method detail already lives on the first hop.
+      if (job.source_target_id) {
+        const isTape = target.type === 'tape-lto9';
+        const isOffsite = target.type === 'offsite-rsync' || target.type === 'offline-vault' || target.type === 's3';
+        // If the upstream target sits on the same host, routing through that
+        // host node again would draw a cycle (it already has an edge into
+        // the upstream target) - connect the two targets directly instead.
+        const upstreamTarget = targetById(job.source_target_id);
+        const sameHost = upstreamTarget?.hostname && upstreamTarget.hostname === target.hostname;
         edges.push({
-          from: `srv-${server.id}`,
-          to: quickNodeId,
-          color: { color: '#3a4a6a' },
-          arrows: 'to',
-          width: 1,
+          from: `tgt-${job.source_target_id}`,
+          to: sameHost ? `tgt-${target.id}` : entryNodeId,
+          label: job.gfs_policy || job.name,
+          color: { color: isTape ? '#f97316' : isOffsite ? '#06b6d4' : '#5a7aa0' },
+          arrows: 'to', width: (isTape || isOffsite) ? 3 : 2, dashes: isOffsite,
+          font: { color: isTape ? '#f97316' : isOffsite ? '#06b6d4' : '#8b92a8', size: 10 },
         });
         return;
       }
+
+      if (!job.source_id) return;
 
       const jobNodeId = `job-${server.id}-${job.id}`;
       const method = data.methods.find(m => m.id === job.method_id);
@@ -699,31 +721,28 @@ async function renderTopology() {
         label: job.name,
         title: `Server: ${server.name}\nZeitplan: ${job.schedule || '-'}\nStatus: ${job.status || '-'}\n${job.notes || ''}`,
         group: 'job',
-        level: 2,
+        level: TOPOLOGY_LEVELS.job,
         color: { background: '#263245', border: '#5c7aa1' },
         font: { color: '#e2e5f0', size: 11 },
         shape: 'box',
         margin: 6,
       });
+      edges.push({
+        from: `src-${server.id}-${job.source_id}`,
+        to: jobNodeId,
+        color: { color: '#4a6a8a' },
+        arrows: 'to',
+        width: 2,
+      });
 
-      if (job.source_id) {
-        edges.push({
-          from: `src-${server.id}-${job.source_id}`,
-          to: jobNodeId,
-          color: { color: '#4a6a8a' },
-          arrows: 'to',
-          width: 2,
-        });
-      }
-
-      let targetFrom = jobNodeId;
+      let chainFrom = jobNodeId;
       if (method && methodNodeId) {
         addNode({
           id: methodNodeId,
           label: method.name,
           title: `Server: ${server.name}\nTyp: ${method.type}\n${method.description || ''}`,
           group: 'method',
-          level: 3,
+          level: TOPOLOGY_LEVELS.method,
           color: { background: nodeColor('method', method.type), border: '#5a6a4a' },
           font: { color: '#e2e5f0', size: 11 },
           shape: 'diamond',
@@ -735,55 +754,14 @@ async function renderTopology() {
           color: { color: '#4a7a4a' }, arrows: 'to', width: 2,
           font: { color: '#8b92a8', size: 10, align: 'middle' },
         });
-        targetFrom = methodNodeId;
+        chainFrom = methodNodeId;
       }
 
-      if (job.primary_target_id) {
-        edges.push({
-          from: targetFrom,
-          to: `tgt-${job.primary_target_id}`,
-          color: { color: '#4a7a4a' }, arrows: 'to', width: 2,
-        });
-      } else {
-        const localPath = inferLocalTargetPath(job, sourceMap.get(job.source_id));
-        if (localPath) {
-          const localNodeId = `local-${server.id}-${job.id}`;
-          addNode({
-            id: localNodeId,
-            label: `lokal\n${localPath}`,
-            title: `Lokales Backup-Ziel auf ${server.name}\nPfad: ${localPath}`,
-            group: 'target',
-            level: 4,
-            color: { background: nodeColor('target', 'local'), border: '#8b92a8' },
-            font: { color: '#e2e5f0', size: 11 },
-            shape: 'database',
-          });
-          edges.push({
-            from: targetFrom,
-            to: localNodeId,
-            label: 'lokal',
-            color: { color: '#8b92a8' }, arrows: 'to', width: 2,
-            font: { color: '#8b92a8', size: 10 },
-          });
-        }
-      }
-
-      if (job.tape_target_id && job.primary_target_id) {
-        edges.push({
-          from: `tgt-${job.primary_target_id}`, to: `tgt-${job.tape_target_id}`,
-          label: job.gfs_policy || 'Tape',
-          color: { color: '#f97316' }, arrows: 'to', width: 3, dashes: false,
-          font: { color: '#f97316', size: 10 },
-        });
-      }
-      if (job.offsite_target_id && job.primary_target_id) {
-        edges.push({
-          from: `tgt-${job.primary_target_id}`, to: `tgt-${job.offsite_target_id}`,
-          label: 'Offsite',
-          color: { color: '#06b6d4' }, arrows: 'to', width: 3, dashes: true,
-          font: { color: '#06b6d4', size: 10 },
-        });
-      }
+      edges.push({
+        from: chainFrom,
+        to: entryNodeId,
+        color: { color: '#4a7a4a' }, arrows: 'to', width: 2,
+      });
     });
   });
 
@@ -907,7 +885,7 @@ function renderMethods() {
 }
 
 function renderTargets() {
-  const typeColor = { nas: 'config', 'tape-lto9': 'tape', 'offsite-rsync': 'offsite', 'backup-server': 'server', local: 'config', s3: 'offsite' };
+  const typeColor = { nas: 'config', 'tape-lto9': 'tape', 'offsite-rsync': 'offsite', 'offline-vault': 'offsite', 'backup-server': 'server', local: 'config', s3: 'offsite' };
   document.getElementById('tbl-targets').innerHTML = data.targets.map(t => `
     <tr>
       <td><strong>${t.name}</strong></td>
@@ -923,22 +901,19 @@ function renderTargets() {
 
 function renderJobs() {
   const statusColor = { active: 'active', paused: 'paused', disabled: 'disabled' };
+  const targetTypeColor = { nas: 'config', 'tape-lto9': 'tape', 'offsite-rsync': 'offsite', 'offline-vault': 'offsite', 'backup-server': 'server', local: 'config', s3: 'offsite' };
   document.getElementById('tbl-jobs').innerHTML = currentServerData.jobs.map(j => {
     const src = sourceById(j.source_id);
+    const upstreamTarget = j.source_target_id ? targetById(j.source_target_id) : null;
     const mth = methodById(j.method_id);
-    const pt = targetById(j.primary_target_id);
-    const tiers = `
-      <div class="tier-icons">
-        ${pt ? `<div class="tier-icon tier-primary" title="Primaer: ${pt.name}">T1</div>` : ''}
-        ${j.tape_target_id ? `<div class="tier-icon tier-tape" title="Tape: ${(targetById(j.tape_target_id)||{}).name}">T2</div>` : ''}
-        ${j.offsite_target_id ? `<div class="tier-icon tier-offsite" title="Offsite: ${(targetById(j.offsite_target_id)||{}).name}">T3</div>` : ''}
-      </div>`;
+    const target = targetById(j.target_id);
+    const sourceLabel = upstreamTarget ? `↳ ${upstreamTarget.name}` : (src ? src.name : '?');
     return `<tr>
       <td><strong>${j.name}</strong>${j.is_encrypted ? ' [enc]' : ''}</td>
-      <td>${src ? src.name : '?'}</td>
+      <td>${sourceLabel}</td>
       <td>${mth ? mth.name : '-'}</td>
-      <td class="text-muted">${pt ? pt.name : '-'}</td>
-      <td>${tiers}</td>
+      <td class="text-muted">${target ? target.name : '-'}</td>
+      <td>${target ? badge(target.type, targetTypeColor[target.type] || 'config') : '-'}</td>
       <td class="text-muted font-mono">${j.schedule || '-'}</td>
       <td>${badge(j.status, statusColor[j.status] || 'config')}</td>
         <td><button class="btn btn-primary btn-sm" onclick="openModal('job',${j.id})">Bearbeiten</button>
@@ -1244,7 +1219,7 @@ function openModal(type, id = null) {
       <div class="form-grid">
         <div><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
         <div><label>Typ</label><select id="f-type">
-          ${(targetTypes.length ? targetTypes : ['nas','backup-server','tape-lto9','offsite-rsync','local','s3']).map(t =>
+          ${(targetTypes.length ? targetTypes : ['nas','backup-server','tape-lto9','offsite-rsync','local','s3','offline-vault']).map(t =>
             `<option value="${t}" ${obj?.type===t?'selected':''}>${t}</option>`).join('')}
         </select></div>
         <div><label>Hostname</label><input id="f-hostname" value="${obj?.hostname||''}"></div>
@@ -1263,6 +1238,7 @@ function openModal(type, id = null) {
     }
     const server = serverById(selectedServerId);
     const noSel = '<option value="">– kein –</option>';
+    const fromTarget = Boolean(obj?.source_target_id);
     content.innerHTML = `
       <h3>${id ? 'Job bearbeiten' : 'Neuer Backup-Job'}</h3>
       <div style="background: var(--bg3); padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 14px;">
@@ -1270,24 +1246,33 @@ function openModal(type, id = null) {
       </div>
       <div class="form-grid">
         <div class="form-full"><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
-        <div class="form-full"><label>Quelle *</label><select id="f-source">
-          ${currentServerData.sources.map(s => `<option value="${s.id}" ${obj?.source_id===s.id?'selected':''}>${s.name}</option>`).join('')}
-        </select></div>
+        <div class="form-full">
+          <label>Quelle *</label>
+          <div style="display:flex;gap:16px;margin:4px 0 8px;">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;">
+              <input type="radio" name="f-source-mode" value="source" ${fromTarget?'':'checked'} onchange="toggleJobSourceMode()"> Server-Quelle
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;">
+              <input type="radio" name="f-source-mode" value="target" ${fromTarget?'checked':''} onchange="toggleJobSourceMode()"> Bestehendes Backup-Ziel (Verkettung)
+            </label>
+          </div>
+          <select id="f-source" style="${fromTarget?'display:none;':''}">
+            ${currentServerData.sources.map(s => `<option value="${s.id}" ${obj?.source_id===s.id?'selected':''}>${s.name}</option>`).join('')}
+          </select>
+          <select id="f-source-target" style="${fromTarget?'':'display:none;'}">
+            ${data.targets.map(t => `<option value="${t.id}" ${obj?.source_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
+          </select>
+          <div class="text-muted" style="font-size:12px;margin-top:4px;">Zur Abbildung mehrstufiger Flüsse (z. B. lokal → Repository → Tape → Offsite-Archiv): jede Stufe ist ein eigener Job, dessen Quelle das Ziel der vorherigen Stufe ist.</div>
+        </div>
         <div><label>Methode</label><select id="f-method">${noSel}
           ${data.methods.map(m => `<option value="${m.id}" ${obj?.method_id===m.id?'selected':''}>${m.name}</option>`).join('')}
         </select></div>
-        <div><label>Primär-Ziel</label><select id="f-ptarget">${noSel}
-          ${data.targets.map(t => `<option value="${t.id}" ${obj?.primary_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
-        </select></div>
-        <div><label>Tape-Ziel (2. Tier)</label><select id="f-ttarget">${noSel}
-          ${data.targets.filter(t=>t.type==='tape-lto9').map(t => `<option value="${t.id}" ${obj?.tape_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
-        </select></div>
-        <div><label>Offsite-Ziel (3. Tier)</label><select id="f-otarget">${noSel}
-          ${data.targets.filter(t=>['offsite-rsync','s3'].includes(t.type)).map(t => `<option value="${t.id}" ${obj?.offsite_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
+        <div><label>Ziel</label><select id="f-target">${noSel}
+          ${data.targets.map(t => `<option value="${t.id}" ${obj?.target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
         </select></div>
         <div><label>Zeitplan</label><input id="f-sched" placeholder="täglich 02:00 / 0 2 * * *" value="${obj?.schedule||''}"></div>
         <div><label>Aufbewahrung</label><input id="f-ret" placeholder="14 Tage" value="${obj?.retention||''}"></div>
-        <div class="form-full"><label>GFS-Policy (Tape)</label><input id="f-gfs" placeholder="7 täglich, 4 wöchentl., 12 monatl." value="${obj?.gfs_policy||''}"></div>
+        <div class="form-full"><label>GFS-Policy</label><input id="f-gfs" placeholder="7 täglich, 4 wöchentl., 12 monatl." value="${obj?.gfs_policy||''}"></div>
         <div><label>Status</label><select id="f-status">
           ${['active','paused','disabled'].map(s => `<option value="${s}" ${obj?.status===s?'selected':''}>${s}</option>`).join('')}
         </select></div>
@@ -1312,6 +1297,12 @@ function openModal(type, id = null) {
 function intOrNull(id) { return id ? parseInt(id) : null; }
 function floatOrNull(id) { return id ? parseFloat(id) : null; }
 function g(id) { return document.getElementById(id); }
+
+function toggleJobSourceMode() {
+  const fromTarget = document.querySelector('input[name="f-source-mode"]:checked')?.value === 'target';
+  g('f-source').style.display = fromTarget ? 'none' : '';
+  g('f-source-target').style.display = fromTarget ? '' : 'none';
+}
 
 function updateQuickConfig() {
   const os = (g('f-os')?.value || '').toLowerCase();
@@ -1342,14 +1333,14 @@ async function createQuickJob(serverId, existingSources, existingJobs, srcType, 
   }
   if (existingJobs.find(j => j.name === jobName)) return true;
   const mth = data.methods.find(m => m.type === methodType);
-  const primaryTargetName = jobName === 'Systembackup täglich' ? 'backup local' : jobName === 'DB-Dump täglich' ? 'backup databases' : null;
-  const primaryTarget = primaryTargetName
-    ? data.targets.find(t => (t.name || '').trim().toLowerCase() === primaryTargetName)
+  const targetName = jobName === 'Systembackup täglich' ? 'backup local' : jobName === 'DB-Dump täglich' ? 'backup databases' : null;
+  const target = targetName
+    ? data.targets.find(t => (t.name || '').trim().toLowerCase() === targetName)
     : null;
   const jr = await fetch(`${API}/servers/${serverId}/jobs`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: jobName, source_id: source.id, method_id: mth?.id || null,
-      primary_target_id: primaryTarget?.id || null,
+      target_id: target?.id || null,
       status: 'active', schedule: 'daily', retention: '3 Tage', is_compressed: true,
       is_encrypted: false, notes: jobNotes })
   });
@@ -1440,10 +1431,12 @@ async function saveTarget() {
 }
 
 async function saveJob() {
+  const fromTarget = document.querySelector('input[name="f-source-mode"]:checked')?.value === 'target';
   const body = {
-    name: g('f-name').value, source_id: parseInt(g('f-source').value),
-    method_id: intOrNull(g('f-method').value), primary_target_id: intOrNull(g('f-ptarget').value),
-    tape_target_id: intOrNull(g('f-ttarget').value), offsite_target_id: intOrNull(g('f-otarget').value),
+    name: g('f-name').value,
+    source_id: fromTarget ? null : parseInt(g('f-source').value),
+    source_target_id: fromTarget ? intOrNull(g('f-source-target').value) : null,
+    method_id: intOrNull(g('f-method').value), target_id: intOrNull(g('f-target').value),
     schedule: g('f-sched').value || null, retention: g('f-ret').value || null,
     gfs_policy: g('f-gfs').value || null, status: g('f-status').value,
     is_encrypted: g('f-enc').checked, is_compressed: g('f-comp').checked,
