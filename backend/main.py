@@ -343,22 +343,36 @@ def _split_legacy_job(job: Dict[str, Any], next_hop_id: int) -> tuple[List[Dict[
     return hops, next_hop_id
 
 
+def _normalize_job_source_ids(job: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize the old singular source_id field into source_ids, so one
+    job can back up several sources together instead of needing one job
+    per source."""
+    if 'source_ids' not in job:
+        single = job.pop('source_id', None)
+        job['source_ids'] = [single] if single else []
+    return job
+
+
 def migrate_server_jobs(server_id: int) -> None:
-    """Upgrade a server's stored jobs from the old fixed-tier shape
-    (primary/tape/offsite target on one job) to the current one-hop-per-job
-    model. No-op once every job has already been migrated."""
+    """Upgrade a server's stored jobs to the current schema:
+    - split the old fixed-tier shape (primary/tape/offsite target on one
+      job) into one-hop-per-job records
+    - normalize the old singular source_id field into source_ids
+    No-op once every job already matches the current shape."""
     jobs = DataStore.load_server_data(server_id, 'jobs')
-    if not any(field in job for job in jobs for field in LEGACY_JOB_TARGET_FIELDS):
+    needs_tier_split = any(field in job for job in jobs for field in LEGACY_JOB_TARGET_FIELDS)
+    needs_source_ids = any('source_id' in job for job in jobs)
+    if not needs_tier_split and not needs_source_ids:
         return
 
     migrated: List[Dict[str, Any]] = []
     next_hop_id = next_id(jobs)
     for job in jobs:
-        if not any(field in job for field in LEGACY_JOB_TARGET_FIELDS):
-            migrated.append(job)
-            continue
-        hops, next_hop_id = _split_legacy_job(dict(job), next_hop_id)
-        migrated.extend(hops)
+        if any(field in job for field in LEGACY_JOB_TARGET_FIELDS):
+            hops, next_hop_id = _split_legacy_job(dict(job), next_hop_id)
+            migrated.extend(_normalize_job_source_ids(hop) for hop in hops)
+        else:
+            migrated.append(_normalize_job_source_ids(dict(job)))
 
     DataStore.save_server_data(server_id, 'jobs', migrated)
 
@@ -526,12 +540,14 @@ class BackupTargetBase(BaseModel):
 
 
 class BackupJobBase(BaseModel):
-    """One backup hop: reads from a source (or an upstream target) and
-    writes to a target. Multi-stage flows (e.g. local -> repository ->
-    tape -> offsite vault) are modeled as a chain of jobs, each one hop,
-    rather than as fixed tiers on a single job."""
+    """One backup hop: reads from one or more sources (or a single upstream
+    target) and writes to a target. Several sources backed up together on
+    the same schedule/method/target belong to one job, not one job each.
+    Multi-stage flows (e.g. local -> repository -> tape -> offsite vault)
+    are modeled as a chain of jobs, each one hop, rather than as fixed
+    tiers on a single job."""
     name: str
-    source_id: Optional[int] = None
+    source_ids: List[int] = []
     source_target_id: Optional[int] = None
     method_id: Optional[int] = None
     target_id: Optional[int] = None

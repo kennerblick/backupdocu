@@ -265,7 +265,6 @@ let editId = null;
 let editType = null;
 let serverModalSources = [];
 let serverModalSourceEditId = null;
-let jobSourceMultiSelect = true;
 const DEFAULT_VIRTUALIZATION_OPTIONS = ['HyperV', 'Docker', 'Proxmox', 'Kubernetes', 'VMware'];
 const DEFAULT_OS_OPTIONS = ['HyperV', 'Windows', 'Windows Server', 'Debian', 'Ubuntu', 'Proxmox', 'anderes'];
 
@@ -579,7 +578,7 @@ function targetEntryNodeId(target) {
 function computeTargetLevels(jobs) {
   const levels = new Map();
   jobs.forEach(job => {
-    if (job.source_id && job.target_id) levels.set(job.target_id, TOPOLOGY_LEVELS.target);
+    if (job.source_ids?.length && job.target_id) levels.set(job.target_id, TOPOLOGY_LEVELS.target);
   });
   // Chained hops depend on an upstream target's level, which may itself be
   // resolved in a later job record - iterate until nothing changes.
@@ -714,7 +713,7 @@ async function renderTopology() {
         return;
       }
 
-      if (!job.source_id) return;
+      if (!job.source_ids?.length) return;
 
       const jobNodeId = `job-${server.id}-${job.id}`;
       const method = data.methods.find(m => m.id === job.method_id);
@@ -731,12 +730,14 @@ async function renderTopology() {
         shape: 'box',
         margin: 6,
       });
-      edges.push({
-        from: `src-${server.id}-${job.source_id}`,
-        to: jobNodeId,
-        color: { color: '#4a6a8a' },
-        arrows: 'to',
-        width: 2,
+      job.source_ids.forEach(sourceId => {
+        edges.push({
+          from: `src-${server.id}-${sourceId}`,
+          to: jobNodeId,
+          color: { color: '#4a6a8a' },
+          arrows: 'to',
+          width: 2,
+        });
       });
 
       let chainFrom = jobNodeId;
@@ -932,11 +933,13 @@ function renderJobs() {
   const statusColor = { active: 'active', paused: 'paused', disabled: 'disabled' };
   const targetTypeColor = { nas: 'config', 'tape-lto9': 'tape', 'offsite-rsync': 'offsite', 'offline-vault': 'offsite', 'backup-server': 'server', local: 'config', s3: 'offsite' };
   document.getElementById('tbl-jobs').innerHTML = currentServerData.jobs.map(j => {
-    const src = sourceById(j.source_id);
+    const sources = (j.source_ids || []).map(sourceById).filter(Boolean);
     const upstreamTarget = j.source_target_id ? targetById(j.source_target_id) : null;
     const mth = methodById(j.method_id);
     const target = targetById(j.target_id);
-    const sourceLabel = upstreamTarget ? `↳ ${upstreamTarget.name}` : (src ? src.name : '?');
+    const sourceLabel = upstreamTarget ? `↳ ${upstreamTarget.name}`
+      : sources.length ? sources.map(s => s.name).join(', ')
+      : '?';
     return `<tr>
       <td><strong>${j.name}</strong>${j.is_encrypted ? ' [enc]' : ''}</td>
       <td>${sourceLabel}</td>
@@ -1291,8 +1294,7 @@ function openModal(type, id = null) {
     const server = serverById(selectedServerId);
     const noSel = '<option value="">– kein –</option>';
     const fromTarget = Boolean(obj?.source_target_id);
-    jobSourceMultiSelect = !id;
-    const sourceTreeHtml = renderJobSourceTree(currentServerData.sources, obj?.source_id ? new Set([obj.source_id]) : new Set());
+    const sourceTreeHtml = renderJobSourceTree(currentServerData.sources, new Set(obj?.source_ids || []));
     content.innerHTML = `
       <h3>${id ? 'Job bearbeiten' : 'Neuer Backup-Job'}</h3>
       <div style="background: var(--bg3); padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 14px;">
@@ -1303,7 +1305,7 @@ function openModal(type, id = null) {
           <label>Quelle *</label>
           <div style="display:flex;gap:16px;margin:4px 0 8px;">
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;">
-              <input type="radio" name="f-source-mode" value="source" ${fromTarget?'':'checked'} onchange="toggleJobSourceMode()"> Server-Quelle${id ? '' : ' (Mehrfachauswahl möglich)'}
+              <input type="radio" name="f-source-mode" value="source" ${fromTarget?'':'checked'} onchange="toggleJobSourceMode()"> Server-Quelle (Mehrfachauswahl möglich)
             </label>
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;">
               <input type="radio" name="f-source-mode" value="target" ${fromTarget?'checked':''} onchange="toggleJobSourceMode()"> Bestehendes Backup-Ziel (Verkettung)
@@ -1315,7 +1317,7 @@ function openModal(type, id = null) {
           <select id="f-source-target" style="${fromTarget?'':'display:none;'}">
             ${data.targets.map(t => `<option value="${t.id}" ${obj?.source_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
           </select>
-          <div class="text-muted" style="font-size:12px;margin-top:4px;">Übergeordnete Quellen wie „Samba" wählen alle darunterliegenden Verzeichnisse automatisch mit aus. Der Jobname wird automatisch aus Hostname und Quelle gebildet${id?'':' – bei Mehrfachauswahl entsteht pro Quelle ein eigener Job'}.</div>
+          <div class="text-muted" style="font-size:12px;margin-top:4px;">Übergeordnete Quellen wie „Samba" wählen alle darunterliegenden Verzeichnisse automatisch mit aus. Alle ausgewählten Quellen gehören zu diesem einen Job; der Jobname wird automatisch aus Hostname und Quelle(n) gebildet.</div>
         </div>
         <div><label>Methode</label><select id="f-method">${noSel}
           ${data.methods.map(m => `<option value="${m.id}" ${obj?.method_id===m.id?'selected':''}>${m.name}</option>`).join('')}
@@ -1429,23 +1431,16 @@ function renderJobSourceTree(sources, checkedIds) {
 }
 
 // Checking a source also checks everything nested under it, so picking
-// e.g. "Samba" pulls in all of its subdirectories in one click. When
-// editing an existing job (single source only), checking one source
-// clears every other checkbox instead of accumulating a selection.
+// e.g. "Samba" pulls in all of its subdirectories in one click. All checked
+// sources end up on the same job (see saveJob), so no upper limit here.
 function onSourceTreeCheck(sourceId, checked) {
-  if (checked) {
-    currentServerData.sources
-      .filter(s => s.parent_id === sourceId)
-      .forEach(child => {
-        const cb = sourceTreeCheckbox(child.id);
-        if (cb) { cb.checked = true; onSourceTreeCheck(child.id, true); }
-      });
-  }
-  if (!jobSourceMultiSelect && checked) {
-    document.querySelectorAll('.src-tree-check').forEach(cb => {
-      if (Number(cb.dataset.id) !== sourceId) cb.checked = false;
+  if (!checked) return;
+  currentServerData.sources
+    .filter(s => s.parent_id === sourceId)
+    .forEach(child => {
+      const cb = sourceTreeCheckbox(child.id);
+      if (cb) { cb.checked = true; onSourceTreeCheck(child.id, true); }
     });
-  }
 }
 
 function onSourceGroupCheck(groupCheckbox) {
@@ -1583,10 +1578,26 @@ async function saveTarget() {
   network = null;
 }
 
-// Jobs are named automatically from the server's hostname and whichever
-// source feeds them, rather than typed by hand.
-function autoJobName(server, sourceName) {
-  return `${server?.hostname || server?.name || 'Server'} – ${sourceName}`;
+// Describes a set of selected sources for the auto-generated job name: the
+// name of their shared parent/path-group when they have one, a "+"-joined
+// list for a small ad-hoc selection, or a count for a larger one.
+function describeSourceSelection(sourceIds) {
+  const sources = sourceIds.map(id => sourceById(id)).filter(Boolean);
+  if (sources.length === 1) return sources[0].name;
+
+  const parentIds = new Set(sources.map(s => s.parent_id || null));
+  if (parentIds.size === 1 && [...parentIds][0] !== null) {
+    const parent = sourceById([...parentIds][0]);
+    if (parent) return parent.name;
+  }
+  const segments = new Set(sources.map(s => pathFirstSegment(s.path)).filter(Boolean));
+  if (segments.size === 1) return `/${[...segments][0]}`;
+
+  return sources.length <= 3 ? sources.map(s => s.name).join(' + ') : `${sources.length} Quellen`;
+}
+
+function autoJobName(server, sourceLabel) {
+  return `${server?.hostname || server?.name || 'Server'} – ${sourceLabel}`;
 }
 
 async function saveJob() {
@@ -1600,36 +1611,24 @@ async function saveJob() {
     notes: g('f-notes').value || null,
   };
 
-  let jobBodies = [];
+  let body;
   if (fromTarget) {
     const sourceTargetId = intOrNull(g('f-source-target').value);
     const upstream = targetById(sourceTargetId);
     if (!upstream) { toast('Bitte ein Backup-Ziel als Quelle wählen', true); return; }
-    jobBodies = [{ name: autoJobName(server, upstream.name), source_target_id: sourceTargetId, ...shared }];
+    body = { name: autoJobName(server, upstream.name), source_ids: [], source_target_id: sourceTargetId, ...shared };
   } else {
     const checkedIds = Array.from(document.querySelectorAll('.src-tree-check:checked')).map(cb => Number(cb.dataset.id));
     if (!checkedIds.length) { toast('Bitte mindestens eine Quelle wählen', true); return; }
-    jobBodies = checkedIds.map(sourceId => ({
-      name: autoJobName(server, sourceById(sourceId)?.name || '?'),
-      source_id: sourceId,
-      ...shared,
-    }));
+    body = { name: autoJobName(server, describeSourceSelection(checkedIds)), source_ids: checkedIds, source_target_id: null, ...shared };
   }
-  if (editId) jobBodies = jobBodies.slice(0, 1); // editing an existing job always updates exactly one record
 
-  // Sequential on purpose: the backend keeps each server's jobs in one JSON
-  // file with a read-modify-write update, so concurrent requests racing on
-  // the same file would silently drop jobs instead of accumulating them.
-  let allOk = true;
-  for (const body of jobBodies) {
-    const url = editId ? `${API}/servers/${selectedServerId}/jobs/${editId}` : `${API}/servers/${selectedServerId}/jobs`;
-    const method = editId ? 'PUT' : 'POST';
-    const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!r.ok) allOk = false;
-  }
-  if (!allOk) { toast('Fehler beim Speichern', true); return; }
+  const url = editId ? `${API}/servers/${selectedServerId}/jobs/${editId}` : `${API}/servers/${selectedServerId}/jobs`;
+  const method = editId ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) { toast('Fehler beim Speichern', true); return; }
 
-  toast(jobBodies.length > 1 ? `${jobBodies.length} Jobs angelegt ✓` : 'Gespeichert ✓');
+  toast('Gespeichert ✓');
   closeModal();
   await loadServerData(selectedServerId);
   await loadAll();
