@@ -81,6 +81,9 @@ tr:hover td { background: var(--bg3); }
 .badge-paused { background: #3a3a1a; color: var(--yellow); }
 .badge-disabled { background: #3a1a1a; color: var(--red); }
 
+.src-tree-row { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.src-tree-row input { flex-shrink: 0; }
+
 /* Modal */
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 1000; align-items: center; justify-content: center; }
 .modal-overlay.open { display: flex; }
@@ -1289,12 +1292,7 @@ function openModal(type, id = null) {
     const noSel = '<option value="">– kein –</option>';
     const fromTarget = Boolean(obj?.source_target_id);
     jobSourceMultiSelect = !id;
-    const sourceTreeHtml = sourceTreeOrder(currentServerData.sources).map(({ source: s, depth }) => `
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:3px 0 3px ${depth*20}px;">
-        <input type="checkbox" class="src-tree-check" data-id="${s.id}" ${obj?.source_id===s.id?'checked':''} onchange="onSourceTreeCheck(${s.id}, this.checked)">
-        <span>${depth ? '↳ ' : ''}${s.name}</span>
-        ${s.path ? `<span class="text-muted" style="font-size:11px;">${s.path}</span>` : ''}
-      </label>`).join('') || '<div class="text-muted" style="font-size:12px;">Keine Quellen auf diesem Server vorhanden.</div>';
+    const sourceTreeHtml = renderJobSourceTree(currentServerData.sources, obj?.source_id ? new Set([obj.source_id]) : new Set());
     content.innerHTML = `
       <h3>${id ? 'Job bearbeiten' : 'Neuer Backup-Job'}</h3>
       <div style="background: var(--bg3); padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 14px;">
@@ -1367,8 +1365,67 @@ function toggleJobSourceMode() {
   g('f-source-target').style.display = fromTarget ? '' : 'none';
 }
 
+// First path segment of a single clean absolute path (e.g. "/samba/hr" ->
+// "samba"), used to auto-group sibling sources under a common folder.
+// Multi-path strings like "/etc /home /root" are left alone - they already
+// describe one atomic source, not several nested ones.
+function pathFirstSegment(path) {
+  const trimmed = (path || '').trim();
+  if (!trimmed.startsWith('/') || trimmed.includes(' ')) return null;
+  return trimmed.split('/').filter(Boolean)[0] || null;
+}
+
 function sourceTreeCheckbox(id) {
   return document.querySelector(`.src-tree-check[data-id="${id}"]`);
+}
+
+// Builds the job-creation source picker: real parent/child relations
+// (parent_id) are rendered as-is, and on top of that, root-level sources
+// that share a common leading path segment but have no explicit parent
+// (e.g. several "/samba/..." shares set up as flat, unrelated sources) are
+// grouped under a synthetic folder row so the whole group can still be
+// selected in one click, without requiring that setup up front.
+function renderJobSourceTree(sources, checkedIds) {
+  const byParent = new Map();
+  sources.forEach(s => {
+    const parentId = s.parent_id || null;
+    if (!byParent.has(parentId)) byParent.set(parentId, []);
+    byParent.get(parentId).push(s);
+  });
+
+  function renderNode(s, depth) {
+    const row = `
+      <label class="src-tree-row" style="padding-left:${depth*20}px;" title="${s.path||''}">
+        <input type="checkbox" class="src-tree-check" data-id="${s.id}" ${checkedIds.has(s.id)?'checked':''} onchange="onSourceTreeCheck(${s.id}, this.checked)">
+        <span>${s.name}</span>
+      </label>`;
+    return row + (byParent.get(s.id) || []).map(child => renderNode(child, depth + 1)).join('');
+  }
+
+  const roots = byParent.get(null) || [];
+  const bySegment = new Map();
+  roots.forEach(s => {
+    const seg = pathFirstSegment(s.path);
+    if (!seg) return;
+    if (!bySegment.has(seg)) bySegment.set(seg, []);
+    bySegment.get(seg).push(s);
+  });
+
+  const grouped = new Set();
+  let html = '';
+  for (const [seg, group] of bySegment) {
+    if (group.length < 2) continue;
+    group.forEach(s => grouped.add(s.id));
+    html += `
+      <label class="src-tree-row" style="font-weight:600;">
+        <input type="checkbox" class="src-tree-group" data-ids="${group.map(s => s.id).join(',')}" onchange="onSourceGroupCheck(this)">
+        <span>/${seg}</span>
+      </label>`;
+    html += group.map(s => renderNode(s, 1)).join('');
+  }
+  roots.forEach(s => { if (!grouped.has(s.id)) html += renderNode(s, 0); });
+
+  return html || '<div class="text-muted" style="font-size:12px;">Keine Quellen auf diesem Server vorhanden.</div>';
 }
 
 // Checking a source also checks everything nested under it, so picking
@@ -1389,6 +1446,15 @@ function onSourceTreeCheck(sourceId, checked) {
       if (Number(cb.dataset.id) !== sourceId) cb.checked = false;
     });
   }
+}
+
+function onSourceGroupCheck(groupCheckbox) {
+  groupCheckbox.dataset.ids.split(',').map(Number).forEach(id => {
+    const cb = sourceTreeCheckbox(id);
+    if (!cb) return;
+    cb.checked = groupCheckbox.checked;
+    if (groupCheckbox.checked) onSourceTreeCheck(id, true);
+  });
 }
 
 function updateQuickConfig() {
