@@ -81,8 +81,6 @@ tr:hover td { background: var(--bg3); }
 .badge-paused { background: #3a3a1a; color: var(--yellow); }
 .badge-disabled { background: #3a1a1a; color: var(--red); }
 
-.source-pick:has(input:checked) { background: var(--accent); border-color: var(--accent); color: #fff; }
-
 /* Modal */
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 1000; align-items: center; justify-content: center; }
 .modal-overlay.open { display: flex; }
@@ -264,6 +262,7 @@ let editId = null;
 let editType = null;
 let serverModalSources = [];
 let serverModalSourceEditId = null;
+let jobSourceMultiSelect = true;
 const DEFAULT_VIRTUALIZATION_OPTIONS = ['HyperV', 'Docker', 'Proxmox', 'Kubernetes', 'VMware'];
 const DEFAULT_OS_OPTIONS = ['HyperV', 'Windows', 'Windows Server', 'Debian', 'Ubuntu', 'Proxmox', 'anderes'];
 
@@ -863,10 +862,35 @@ function renderServers() {
   document.getElementById('tbl-servers').innerHTML = html || '<tr><td colspan="9" class="text-muted">Keine Server gefunden</td></tr>';
 }
 
+// Orders sources parent-first, children directly beneath their parent, so
+// a flat list can be rendered as a tree (indentation-only or checkbox tree).
+// Guards against broken/self-referential parent_id by treating it as a root,
+// and caps recursion depth as a defensive measure against reference cycles.
+function sourceTreeOrder(sources) {
+  const byId = new Map(sources.map(s => [s.id, s]));
+  const byParent = new Map();
+  sources.forEach(s => {
+    const parentId = (s.parent_id && byId.has(s.parent_id)) ? s.parent_id : null;
+    if (!byParent.has(parentId)) byParent.set(parentId, []);
+    byParent.get(parentId).push(s);
+  });
+
+  const ordered = [];
+  function walk(parentId, depth) {
+    if (depth > 20) return;
+    (byParent.get(parentId) || []).forEach(s => {
+      ordered.push({ source: s, depth, hasChildren: byParent.has(s.id) });
+      walk(s.id, depth + 1);
+    });
+  }
+  walk(null, 0);
+  return ordered;
+}
+
 function renderSources() {
   const typeMap = { database: 'db', share: 'share', config: 'config', 'vm-full': 'vm', kubernetes: 'active', system: 'server' };
-  document.getElementById('tbl-sources').innerHTML = currentServerData.sources.map(s => `<tr>
-    <td><strong>${s.name}</strong></td>
+  document.getElementById('tbl-sources').innerHTML = sourceTreeOrder(currentServerData.sources).map(({ source: s, depth }) => `<tr>
+    <td style="padding-left:${12 + depth * 20}px;">${depth ? '↳ ' : ''}<strong>${s.name}</strong></td>
     <td>${badge(s.type, typeMap[s.type] || 'config')}</td>
     <td class="font-mono text-muted">${s.path || '-'}</td>
     <td class="text-muted">${s.size_gb ? s.size_gb + ' GB' : '-'}</td>
@@ -973,6 +997,7 @@ function resetServerSourceForm() {
   if (saveBtn) saveBtn.textContent = '+ Quelle speichern';
   const cancelBtn = g('fsrc-cancel-btn');
   if (cancelBtn) cancelBtn.style.display = 'none';
+  renderServerSourceParentOptions();
 }
 
 function startEditServerSource(sourceId) {
@@ -984,14 +1009,30 @@ function startEditServerSource(sourceId) {
   g('fsrc-path').value = src.path || '';
   g('fsrc-size').value = src.size_gb ?? '';
   g('fsrc-desc').value = src.description || '';
+  renderServerSourceParentOptions();
+  g('fsrc-parent').value = src.parent_id || '';
   const saveBtn = g('fsrc-save-btn');
   if (saveBtn) saveBtn.textContent = 'Quelle aktualisieren';
   const cancelBtn = g('fsrc-cancel-btn');
   if (cancelBtn) cancelBtn.style.display = 'inline-block';
 }
 
+// A source cannot be its own parent - offered options exclude whichever
+// source is currently being edited (if any).
+function renderServerSourceParentOptions() {
+  const sel = g('fsrc-parent');
+  if (!sel) return;
+  const current = sel.value;
+  const options = serverModalSources
+    .filter(s => s.id !== serverModalSourceEditId)
+    .map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  sel.innerHTML = '<option value="">– keine (oberste Ebene) –</option>' + options;
+  sel.value = current;
+}
+
 function renderServerSourcesInModal() {
   const box = g('server-sources-list');
+  renderServerSourceParentOptions();
   if (!box) return;
 
   if (!serverModalSources.length) {
@@ -999,10 +1040,10 @@ function renderServerSourcesInModal() {
     return;
   }
 
-  box.innerHTML = serverModalSources.map(src => `
-    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border);">
+  box.innerHTML = sourceTreeOrder(serverModalSources).map(({ source: src, depth }) => `
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border);margin-left:${depth * 20}px;">
       <div>
-        <div><strong>${src.name}</strong> <span class="badge badge-config" style="margin-left:6px;">${src.type}</span></div>
+        <div>${depth ? '↳ ' : ''}<strong>${src.name}</strong> <span class="badge badge-config" style="margin-left:6px;">${src.type}</span></div>
         <div class="text-muted" style="font-size:12px;margin-top:2px;">${src.path || '-'}${src.size_gb ? ` · ${src.size_gb} GB` : ''}</div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
@@ -1035,6 +1076,7 @@ async function saveServerSourceFromModal() {
     path: g('fsrc-path').value || null,
     size_gb: floatOrNull(g('fsrc-size').value),
     description: g('fsrc-desc').value || null,
+    parent_id: intOrNull(g('fsrc-parent').value),
   };
 
   const url = serverModalSourceEditId
@@ -1165,6 +1207,7 @@ function openModal(type, id = null) {
                 </select></div>
                 <div class="form-full"><label>Pfad</label><input id="fsrc-path" placeholder="/etc /home /var/lib/mysql"></div>
                 <div><label>Größe (GB)</label><input type="number" id="fsrc-size" placeholder="optional"></div>
+                <div><label>Übergeordnete Quelle</label><select id="fsrc-parent"><option value="">– keine (oberste Ebene) –</option></select></div>
                 <div class="form-full"><label>Beschreibung</label><textarea id="fsrc-desc" placeholder="Optionale Beschreibung"></textarea></div>
               </div>
               <div style="display:flex;gap:8px;justify-content:flex-end;">
@@ -1208,6 +1251,10 @@ function openModal(type, id = null) {
         </select></div>
         <div class="form-full"><label>Pfad</label><input id="f-path" value="${obj?.path||''}"></div>
         <div><label>Größe (GB)</label><input type="number" id="f-size" value="${obj?.size_gb||''}"></div>
+        <div><label>Übergeordnete Quelle</label><select id="f-parent">
+          <option value="">– keine (oberste Ebene) –</option>
+          ${currentServerData.sources.filter(s => s.id !== id).map(s => `<option value="${s.id}" ${obj?.parent_id===s.id?'selected':''}>${s.name}</option>`).join('')}
+        </select></div>
         <div class="form-full"><label>Beschreibung</label><textarea id="f-desc">${obj?.description||''}</textarea></div>
       </div>
       <div class="modal-actions">
@@ -1241,33 +1288,36 @@ function openModal(type, id = null) {
     const server = serverById(selectedServerId);
     const noSel = '<option value="">– kein –</option>';
     const fromTarget = Boolean(obj?.source_target_id);
+    jobSourceMultiSelect = !id;
+    const sourceTreeHtml = sourceTreeOrder(currentServerData.sources).map(({ source: s, depth }) => `
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:3px 0 3px ${depth*20}px;">
+        <input type="checkbox" class="src-tree-check" data-id="${s.id}" ${obj?.source_id===s.id?'checked':''} onchange="onSourceTreeCheck(${s.id}, this.checked)">
+        <span>${depth ? '↳ ' : ''}${s.name}</span>
+        ${s.path ? `<span class="text-muted" style="font-size:11px;">${s.path}</span>` : ''}
+      </label>`).join('') || '<div class="text-muted" style="font-size:12px;">Keine Quellen auf diesem Server vorhanden.</div>';
     content.innerHTML = `
       <h3>${id ? 'Job bearbeiten' : 'Neuer Backup-Job'}</h3>
       <div style="background: var(--bg3); padding: 12px; border-radius: 6px; margin-bottom: 16px; font-size: 14px;">
         <strong>Server:</strong> ${server ? server.name : 'Unbekannt'} (${server ? server.hostname || 'N/A' : ''})
       </div>
       <div class="form-grid">
-        <div class="form-full"><label>Name *</label><input id="f-name" value="${obj?.name||''}"></div>
         <div class="form-full">
           <label>Quelle *</label>
           <div style="display:flex;gap:16px;margin:4px 0 8px;">
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;">
-              <input type="radio" name="f-source-mode" value="source" ${fromTarget?'':'checked'} onchange="toggleJobSourceMode()"> Server-Quelle
+              <input type="radio" name="f-source-mode" value="source" ${fromTarget?'':'checked'} onchange="toggleJobSourceMode()"> Server-Quelle${id ? '' : ' (Mehrfachauswahl möglich)'}
             </label>
             <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:normal;">
               <input type="radio" name="f-source-mode" value="target" ${fromTarget?'checked':''} onchange="toggleJobSourceMode()"> Bestehendes Backup-Ziel (Verkettung)
             </label>
           </div>
-          <div id="f-source" style="display:flex;flex-wrap:wrap;gap:8px;${fromTarget?'display:none;':''}">
-            ${currentServerData.sources.map(s => `
-              <label class="source-pick" style="display:flex;align-items:center;gap:6px;cursor:pointer;background:var(--bg3);padding:6px 12px;border-radius:20px;border:1px solid var(--border);font-weight:normal;">
-                <input type="radio" name="f-source-pick" value="${s.id}" ${obj?.source_id===s.id?'checked':''}> ${s.name}
-              </label>`).join('') || '<div class="text-muted" style="font-size:12px;">Keine Quellen auf diesem Server vorhanden.</div>'}
+          <div id="f-source" style="display:flex;flex-direction:column;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 12px;max-height:220px;overflow-y:auto;${fromTarget?'display:none;':''}">
+            ${sourceTreeHtml}
           </div>
           <select id="f-source-target" style="${fromTarget?'':'display:none;'}">
             ${data.targets.map(t => `<option value="${t.id}" ${obj?.source_target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
           </select>
-          <div class="text-muted" style="font-size:12px;margin-top:4px;">Zur Abbildung mehrstufiger Flüsse (z. B. lokal → Repository → Tape → Offsite-Archiv): jede Stufe ist ein eigener Job, dessen Quelle das Ziel der vorherigen Stufe ist.</div>
+          <div class="text-muted" style="font-size:12px;margin-top:4px;">Übergeordnete Quellen wie „Samba" wählen alle darunterliegenden Verzeichnisse automatisch mit aus. Der Jobname wird automatisch aus Hostname und Quelle gebildet${id?'':' – bei Mehrfachauswahl entsteht pro Quelle ein eigener Job'}.</div>
         </div>
         <div><label>Methode</label><select id="f-method">${noSel}
           ${data.methods.map(m => `<option value="${m.id}" ${obj?.method_id===m.id?'selected':''}>${m.name}</option>`).join('')}
@@ -1275,7 +1325,15 @@ function openModal(type, id = null) {
         <div><label>Ziel</label><select id="f-target">${noSel}
           ${data.targets.map(t => `<option value="${t.id}" ${obj?.target_id===t.id?'selected':''}>${t.name}</option>`).join('')}
         </select></div>
-        <div><label>Zeitplan</label><input id="f-sched" placeholder="täglich 02:00 / 0 2 * * *" value="${obj?.schedule||''}"></div>
+        <div>
+          <label>Zeitplan</label>
+          <input id="f-sched" placeholder="täglich 02:00 / 0 2 * * *" value="${obj?.schedule||''}">
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <button type="button" class="btn btn-cancel btn-sm" onclick="g('f-sched').value='täglich'">täglich</button>
+            <button type="button" class="btn btn-cancel btn-sm" onclick="g('f-sched').value='wöchentlich'">wöchentlich</button>
+            <button type="button" class="btn btn-cancel btn-sm" onclick="g('f-sched').value='monatlich'">monatlich</button>
+          </div>
+        </div>
         <div><label>Aufbewahrung</label><input id="f-ret" placeholder="14 Tage" value="${obj?.retention||''}"></div>
         <div class="form-full"><label>GFS-Policy</label><input id="f-gfs" placeholder="7 täglich, 4 wöchentl., 12 monatl." value="${obj?.gfs_policy||''}"></div>
         <div><label>Status</label><select id="f-status">
@@ -1307,6 +1365,30 @@ function toggleJobSourceMode() {
   const fromTarget = document.querySelector('input[name="f-source-mode"]:checked')?.value === 'target';
   g('f-source').style.display = fromTarget ? 'none' : '';
   g('f-source-target').style.display = fromTarget ? '' : 'none';
+}
+
+function sourceTreeCheckbox(id) {
+  return document.querySelector(`.src-tree-check[data-id="${id}"]`);
+}
+
+// Checking a source also checks everything nested under it, so picking
+// e.g. "Samba" pulls in all of its subdirectories in one click. When
+// editing an existing job (single source only), checking one source
+// clears every other checkbox instead of accumulating a selection.
+function onSourceTreeCheck(sourceId, checked) {
+  if (checked) {
+    currentServerData.sources
+      .filter(s => s.parent_id === sourceId)
+      .forEach(child => {
+        const cb = sourceTreeCheckbox(child.id);
+        if (cb) { cb.checked = true; onSourceTreeCheck(child.id, true); }
+      });
+  }
+  if (!jobSourceMultiSelect && checked) {
+    document.querySelectorAll('.src-tree-check').forEach(cb => {
+      if (Number(cb.dataset.id) !== sourceId) cb.checked = false;
+    });
+  }
 }
 
 function updateQuickConfig() {
@@ -1403,8 +1485,8 @@ async function saveServer() {
 async function saveSource() {
   const body = { name: g('f-name').value, type: g('f-type').value,
     path: g('f-path').value || null, size_gb: floatOrNull(g('f-size').value),
-    description: g('f-desc').value || null };
-  
+    description: g('f-desc').value || null, parent_id: intOrNull(g('f-parent').value) };
+
   const url = editId ? `${API}/servers/${selectedServerId}/sources/${editId}` : `${API}/servers/${selectedServerId}/sources`;
   const method = editId ? 'PUT' : 'POST';
   const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -1435,24 +1517,48 @@ async function saveTarget() {
   network = null;
 }
 
+// Jobs are named automatically from the server's hostname and whichever
+// source feeds them, rather than typed by hand.
+function autoJobName(server, sourceName) {
+  return `${server?.hostname || server?.name || 'Server'} – ${sourceName}`;
+}
+
 async function saveJob() {
   const fromTarget = document.querySelector('input[name="f-source-mode"]:checked')?.value === 'target';
-  const body = {
-    name: g('f-name').value,
-    source_id: fromTarget ? null : intOrNull(document.querySelector('input[name="f-source-pick"]:checked')?.value),
-    source_target_id: fromTarget ? intOrNull(g('f-source-target').value) : null,
+  const server = serverById(selectedServerId);
+  const shared = {
     method_id: intOrNull(g('f-method').value), target_id: intOrNull(g('f-target').value),
     schedule: g('f-sched').value || null, retention: g('f-ret').value || null,
     gfs_policy: g('f-gfs').value || null, status: g('f-status').value,
     is_encrypted: g('f-enc').checked, is_compressed: g('f-comp').checked,
     notes: g('f-notes').value || null,
   };
-  
-  const url = editId ? `${API}/servers/${selectedServerId}/jobs/${editId}` : `${API}/servers/${selectedServerId}/jobs`;
-  const method = editId ? 'PUT' : 'POST';
-  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!r.ok) { toast('Fehler beim Speichern', true); return; }
-  toast('Gespeichert ✓');
+
+  let jobBodies = [];
+  if (fromTarget) {
+    const sourceTargetId = intOrNull(g('f-source-target').value);
+    const upstream = targetById(sourceTargetId);
+    if (!upstream) { toast('Bitte ein Backup-Ziel als Quelle wählen', true); return; }
+    jobBodies = [{ name: autoJobName(server, upstream.name), source_target_id: sourceTargetId, ...shared }];
+  } else {
+    const checkedIds = Array.from(document.querySelectorAll('.src-tree-check:checked')).map(cb => Number(cb.dataset.id));
+    if (!checkedIds.length) { toast('Bitte mindestens eine Quelle wählen', true); return; }
+    jobBodies = checkedIds.map(sourceId => ({
+      name: autoJobName(server, sourceById(sourceId)?.name || '?'),
+      source_id: sourceId,
+      ...shared,
+    }));
+  }
+  if (editId) jobBodies = jobBodies.slice(0, 1); // editing an existing job always updates exactly one record
+
+  const results = await Promise.all(jobBodies.map(body => {
+    const url = editId ? `${API}/servers/${selectedServerId}/jobs/${editId}` : `${API}/servers/${selectedServerId}/jobs`;
+    const method = editId ? 'PUT' : 'POST';
+    return fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  }));
+  if (results.some(r => !r.ok)) { toast('Fehler beim Speichern', true); return; }
+
+  toast(jobBodies.length > 1 ? `${jobBodies.length} Jobs angelegt ✓` : 'Gespeichert ✓');
   closeModal();
   await loadServerData(selectedServerId);
   await loadAll();

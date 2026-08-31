@@ -286,6 +286,24 @@ def delete_server_with_data(server_id: int) -> None:
     DataStore.delete_server_directory(server_id)
 
 
+def delete_source_with_children(server_id: int, source_id: int) -> None:
+    """Delete a backup source together with any sources nested under it."""
+    sources = DataStore.load_server_data(server_id, 'sources')
+    to_delete = {source_id}
+    changed = True
+    while changed:
+        changed = False
+        for source in sources:
+            if source.get('parent_id') in to_delete and source.get('id') not in to_delete:
+                to_delete.add(source.get('id'))
+                changed = True
+
+    remaining = [source for source in sources if source.get('id') not in to_delete]
+    if len(remaining) == len(sources):
+        raise HTTPException(status_code=404, detail='Not found')
+    DataStore.save_server_data(server_id, 'sources', remaining)
+
+
 LEGACY_JOB_TARGET_FIELDS = ('primary_target_id', 'tape_target_id', 'offsite_target_id')
 
 
@@ -495,6 +513,7 @@ class BackupSourceBase(BaseModel):
     path: Optional[str] = None
     size_gb: Optional[float] = None
     description: Optional[str] = None
+    parent_id: Optional[int] = None
 
 
 class BackupTargetBase(BaseModel):
@@ -843,7 +862,7 @@ def update_source(server_id: int, source_id: int, source: BackupSourceBase):
 def delete_source(server_id: int, source_id: int):
     if not get_item_global('servers', server_id):
         raise HTTPException(status_code=404, detail='Server not found')
-    delete_server(server_id, 'sources', source_id)
+    delete_source_with_children(server_id, source_id)
 
 
 @app.get('/api/servers/{server_id}/jobs')
