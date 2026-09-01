@@ -81,8 +81,12 @@ tr:hover td { background: var(--bg3); }
 .badge-paused { background: #3a3a1a; color: var(--yellow); }
 .badge-disabled { background: #3a1a1a; color: var(--red); }
 
-.src-tree-row { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.src-tree-row input { flex-shrink: 0; }
+.src-tree-row { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 4px 0; color: var(--text); }
+/* Override the global input{width:100%} rule: inside a column flex
+   container (#f-source), a stretched label gives the checkbox a resolved
+   width to fill via 100%, blowing it up to the full row and pushing the
+   name off-screen. */
+.src-tree-row input { width: auto; flex: 0 0 auto; }
 
 /* Modal */
 .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 1000; align-items: center; justify-content: center; }
@@ -785,7 +789,7 @@ async function renderTopology() {
       }
     },
     physics: { enabled: false },
-    interaction: { tooltipDelay: 200, hover: true, navigationButtons: true, keyboard: true },
+    interaction: { tooltipDelay: 200, hover: true, navigationButtons: false, keyboard: true },
     edges: { smooth: { type: 'cubicBezier', forceDirection: 'horizontal' } },
     nodes: { borderWidth: 1, shadow: { enabled: true, size: 6 } },
   };
@@ -1396,10 +1400,12 @@ function renderJobSourceTree(sources, checkedIds) {
   });
 
   function renderNode(s, depth) {
+    // Indent only the text, not the row: the checkbox stays in a fixed
+    // column for every depth instead of drifting right with nesting.
     const row = `
-      <label class="src-tree-row" style="padding-left:${depth*20}px;" title="${s.path||''}">
+      <label class="src-tree-row" title="${s.path||''}">
         <input type="checkbox" class="src-tree-check" data-id="${s.id}" ${checkedIds.has(s.id)?'checked':''} onchange="onSourceTreeCheck(${s.id}, this.checked)">
-        <span>${s.name}</span>
+        <span style="padding-left:${depth*20}px;">${s.name}</span>
       </label>`;
     return row + (byParent.get(s.id) || []).map(child => renderNode(child, depth + 1)).join('');
   }
